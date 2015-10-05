@@ -8,20 +8,20 @@ import (
   "io"
   "compress/bzip2"
   "regexp"
-  "strings"
-  "sync"
-  "testing"
   "errors"
   "github.com/dustin/go-wikiparse"
-  //"github.com/alixaxel/pagerank"
+  "sync"
+  //"testing"
+  //"strings"
+  "github.com/alixaxel/pagerank"
 )
 
 type pageitems struct {
-  subtitles []string
   links []string
+  reftohere []string
+  subtitles []string
   text string
   offset int64
-  reftohere []string
   pagerank float64
 }
 
@@ -30,6 +30,8 @@ type alphabetpos int
 func main() {
   // file := flag.String("file", "", "file to read")
   // flag.Parse()
+  var db map[string]int
+  collection := make(map[string]*pageitems)
   file := "enwiki-latest-pages-articles1.xml-p000000010p000010000.bz2"
   wikijsonin, err := decompressbzip(file)
   /*
@@ -47,8 +49,6 @@ func main() {
     fmt.Println(err)
     os.Exit(1)
   }
-  var page *wikiparse.Page
-  collection := make(map[string]*pageitems)
   defer func() {
     if r := recover(); r != nil {
       fmt.Println("recovered in main")
@@ -56,15 +56,16 @@ func main() {
   }()
   var wg sync.WaitGroup
   wg.Add(1)
-  go func(*testing.B) {
-    defer wg.Done()
+  go func() {
+    var page *wikiparse.Page
+    graph := pagerank.NewGraph()
+    //defer wg.Done()
     for i := 0; i < 10; i++ {
       page, err = parser.Next()
       if err != nil {
 	err = errors.New("Error while extracting wikipedia page data, attempting to recover")
 	panic(err)
       }
-      //fmt.Println(page.Revisions)
       for i := 0; i < len(page.Revisions); i++ {
 	// if text is not nil then add to collection text and subtitles to collection 
 	fmt.Println(collection[page.Title])
@@ -75,7 +76,6 @@ func main() {
 	  getsubtitles(collection[page.Title].subtitles, page.Revisions[i].Text, page.Title)
 	}
 	collection[page.Title].links = wikiparse.FindLinks(page.Revisions[i].Text)
-
 	// If there are links add them to collection
 	for i := range collection[page.Title].links {
 	  if collection[collection[page.Title].links[i]] == nil {
@@ -83,26 +83,29 @@ func main() {
 	  }
 	}
       }
+      go func() {
+	for i := range collection {
+	  graph.Link(1, 7, float64(len(collection[i].links)))
+	  graph.Rank(0.85, 0.000001, func(node int, rank float64) {
+	    collection[i].pagerank = rank
+	  })
+	}
+      }()
     }
+    wg.Done()
   }()
-  go func(*testing.B) {
-    defer wg.Done()
-    var source, target int
-    var weight float64
-    for i := range collection {
-      source = 1
-      target = 10
-      weight = len(collection[i].links)
-      collection[i].pagerank = 
-
-  }
   wg.Wait()
   fmt.Println(len(collection))
+  var avgpr float64
   for i := range collection {
+    /*
     fmt.Println(i)
     fmt.Println(collection[i].links)
     fmt.Println(collection[i].reftohere)
     fmt.Println(collection[i].subtitles)
+    fmt.Println(collection[i].pagerank)
+    */
+    avgpr += collection[i].pagerank
     fmt.Println()
   }
 }
@@ -141,8 +144,27 @@ func getsubtitles(subtitles []string, txt, title string) error {
   }
   return nil
 }
-func checkcharpos(char string) int {
+
+func register(collection map[string]*pageitems, ioreader io.Reader) map[string]int {
+  var reg map[string]int
+  var newletter bool = false
+  var count byte = 0
   alphabet = []string{"a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","æ","ø","å"}
+  indexreader := wikiparse.NewIndexReader(ioreader)
+  var ie wikiparse.IndexEntry
+  for ie, err = indexreader.Next(); err == nil {
+    if alphabet[count] != strings.ToLower(ie.ArticleName[0])
+      reg[alphabet[count]] = ie.PageOffset
+      count++
+      continue
+    }
+  }
+  if err != nil {
+    fmt.Println("done updating")
+  }
+  return reg
+}
+func checkcharpos(char string) byte {
   const (
     a alphabetpos = 0 + iota
     b
@@ -241,3 +263,4 @@ func checkcharpos(char string) int {
     return å
   }
 }
+*/
