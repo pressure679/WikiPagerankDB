@@ -12,25 +12,23 @@ import (
   "github.com/dustin/go-wikiparse"
   "sync"
   //"testing"
-  //"strings"
+  "strings"
   "github.com/alixaxel/pagerank"
 )
 
 type pageitems struct {
+  alphabetoffset int64
   links []string
   reftohere []string
   subtitles []string
   text string
-  offset int64
   pagerank float64
 }
-
-type alphabetpos int
 
 func main() {
   // file := flag.String("file", "", "file to read")
   // flag.Parse()
-  var db map[string]int
+  //var db map[string]int
   collection := make(map[string]*pageitems)
   file := "enwiki-latest-pages-articles1.xml-p000000010p000010000.bz2"
   wikijsonin, err := decompressbzip(file)
@@ -83,14 +81,11 @@ func main() {
 	  }
 	}
       }
-      go func() {
-	for i := range collection {
-	  graph.Link(1, 7, float64(len(collection[i].links)))
-	  graph.Rank(0.85, 0.000001, func(node int, rank float64) {
-	    collection[i].pagerank = rank
-	  })
-	}
-      }()
+      // not at all optimal, we don't get node of depth 7 - first read a max of 1000 nodes with depth of max 7 in relation to our search query and find the shortest path to good related nodes (much possibly measured by pageranks).
+      graph.Link(1, 7, float64(len(collection[page.Title].links)))
+      graph.Rank(0.85, 0.000001, func(node int, rank float64) {
+	collection[page.Title].pagerank = rank
+      })
     }
     wg.Done()
   }()
@@ -98,12 +93,12 @@ func main() {
   fmt.Println(len(collection))
   var avgpr float64
   for i := range collection {
-    /*
     fmt.Println(i)
+    fmt.Println(collection[i].pagerank)
+    /*
     fmt.Println(collection[i].links)
     fmt.Println(collection[i].reftohere)
     fmt.Println(collection[i].subtitles)
-    fmt.Println(collection[i].pagerank)
     */
     avgpr += collection[i].pagerank
     fmt.Println()
@@ -147,24 +142,25 @@ func getsubtitles(subtitles []string, txt, title string) error {
 
 func register(collection map[string]*pageitems, ioreader io.Reader) map[string]int {
   var reg map[string]int
-  var newletter bool = false
   var count byte = 0
-  alphabet = []string{"a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","æ","ø","å"}
+  alphabet := []string{"a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","æ","ø","å"}
   indexreader := wikiparse.NewIndexReader(ioreader)
-  var ie wikiparse.IndexEntry
-  for ie, err = indexreader.Next(); err == nil {
-    if alphabet[count] != strings.ToLower(ie.ArticleName[0])
+  for {
+    ie, err := indexreader.Next()
+    if err != nil {
+      break
+    }
+    // if not added, add 1st character titles of wikipedia pages to our register
+    if alphabet[count] != strings.ToLower(string(ie.ArticleName[0])) {
       reg[alphabet[count]] = ie.PageOffset
       count++
       continue
     }
   }
-  if err != nil {
-    fmt.Println("done updating")
-  }
   return reg
 }
-func checkcharpos(char string) byte {
+/*
+func checkcharpos(char string) int {
   const (
     a alphabetpos = 0 + iota
     b
@@ -196,7 +192,6 @@ func checkcharpos(char string) byte {
     ø
     å
   )
-  var i int
   for i := 0; i < len(alphabet); i++ {
     if char == alphabet[i] {
       break
