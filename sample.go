@@ -1,34 +1,36 @@
 // Package main provides ...
-
 package main
-
 import (
   "fmt"
   "os"
   "io"
+	"bufio"
   "compress/bzip2"
+  "strings"
+	"strconv"
   "regexp"
+  "sync"
   "errors"
   "github.com/dustin/go-wikiparse"
-  "sync"
-  //"testing"
-  "strings"
   "github.com/alixaxel/pagerank"
+	"djikstra"
+  //"testing"
 )
 
-type pageitems struct {
-  alphabetoffset int64
+type PageItems struct {
   links []string
-  reftohere []string
-  subtitles []string
+  sections []string
   text string
-  pagerank float64
+	register map[string]int
+  //reftohere []string
+  //pagerank float64
 }
 
 func main() {
   // file := flag.String("file", "", "file to read")
   // flag.Parse()
-  //var db map[string]int
+  // var db map[string]int
+	
   collection := make(map[string]*pageitems)
   file := "enwiki-latest-pages-articles1.xml-p000000010p000010000.bz2"
   wikijsonin, err := decompressbzip(file)
@@ -61,25 +63,27 @@ func main() {
     for i := 0; i < 10; i++ {
       page, err = parser.Next()
       if err != nil {
-	err = errors.New("Error while extracting wikipedia page data, attempting to recover")
-	panic(err)
+				err = errors.New("Error while extracting wikipedia page data, attempting to recover")
+				panic(err)
       }
       for i := 0; i < len(page.Revisions); i++ {
-	// if text is not nil then add to collection text and subtitles to collection 
-	fmt.Println(collection[page.Title])
-	collection[page.Title] = &pageitems{}
-	fmt.Println(collection[page.Title])
-	if page.Revisions[i].Text != "" {
-	  collection[page.Title].text = page.Revisions[i].Text
-	  getsubtitles(collection[page.Title].subtitles, page.Revisions[i].Text, page.Title)
-	}
-	collection[page.Title].links = wikiparse.FindLinks(page.Revisions[i].Text)
-	// If there are links add them to collection
-	for i := range collection[page.Title].links {
-	  if collection[collection[page.Title].links[i]] == nil {
-	    collection[collection[page.Title].links[i]] = &pageitems{}
-	  }
-	}
+				fmt.Println(collection[page.Title])
+				collection[page.Title] = &pageitems{}
+				fmt.Println(collection[page.Title])
+				
+				// if text is not nil then add to collection text and sections to collection 
+				if page.Revisions[i].Text != "" {
+					collection[page.Title].text = page.Revisions[i].Text
+					getsections(collection[page.Title].sections, page.Revisions[i].Text, page.Title)
+				}
+				
+				collection[page.Title].links = wikiparse.FindLinks(page.Revisions[i].Text)
+				// If there are links add them to collection
+				for i := range collection[page.Title].links {
+					if collection[collection[page.Title].links[i]] == nil {
+						collection[collection[page.Title].links[i]] = &pageitems{}
+					}
+				}
       }
       // not at all optimal, we don't get node of depth 7 - first read a max of 1000 nodes with depth of max 7 in relation to our search query and find the shortest path to good related nodes (much possibly measured by pageranks).
       graph.Link(1, 7, float64(len(collection[page.Title].links)))
@@ -98,14 +102,15 @@ func main() {
     /*
     fmt.Println(collection[i].links)
     fmt.Println(collection[i].reftohere)
-    fmt.Println(collection[i].subtitles)
+    fmt.Println(collection[i].sections)
     */
     avgpr += collection[i].pagerank
     fmt.Println()
   }
 }
 
-func decompressbzip(file string) (io.Reader, error) {
+// use os.Open to make an io.Reader from bzip2.NewReader(os.File) to read wikipedia xml file
+func DecompressBZip (file string) (io.Reader, error) {
   osfile, err := os.Open(file)
   if err != nil {
     return nil, err
@@ -114,7 +119,8 @@ func decompressbzip(file string) (io.Reader, error) {
   return ioreader, nil
 }
 
-func getsubtitles(subtitles []string, txt, title string) error {
+// Get sections from a wikipedia article
+func GetSections(sections []string, txt, title string) error {
   re, err := regexp.Compile("[=]{2,5}.{1,50}[=]{2,5}")
   if err != nil {
     return err
@@ -128,19 +134,21 @@ func getsubtitles(subtitles []string, txt, title string) error {
   }
   //fmt.Println(len(index)
   if len(index) % 2 == 0 {
-    subtitles = make([]string, len(index) / 2)
+    sections = make([]string, len(index) / 2)
   } else {
-    subtitles = make([]string, (len(index) - 1) / 2)
+    sections = make([]string, (len(index) - 1) / 2)
   }
   for i := 0; i < len(index); i++ {
     if len(index) <= i * 2 + 1 { continue }
-    //fmt.Println("getsubtitles:", i, txt[index[i][0]:index[i][1]], index[i][0], index[i][1]) // debugging purposes
-    subtitles = append(subtitles, txt[index[i][0]:index[i][1]])
+    //fmt.Println("getsections:", i, txt[index[i][0]:index[i][1]], index[i][0], index[i][1]) // debugging purposes
+    sections = append(sections, txt[index[i][0]:index[i][1]])
   }
   return nil
 }
 
-func register(collection map[string]*pageitems, ioreader io.Reader) map[string]int {
+// Get the byte offset of the first article with an occurence of a letter from the latin alphabet - should be used if FileExists method returns false
+
+func Register(collection map[string]*pageitems, ioreader io.Reader) map[string]int {
   var reg map[string]int
   var count byte = 0
   alphabet := []string{"a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","æ","ø","å"}
@@ -159,103 +167,48 @@ func register(collection map[string]*pageitems, ioreader io.Reader) map[string]i
   }
   return reg
 }
-/*
-func checkcharpos(char string) int {
-  const (
-    a alphabetpos = 0 + iota
-    b
-    c
-    d
-    e
-    f
-    g
-    h
-    i
-    j
-    k
-    l
-    m
-    n
-    o
-    p
-    q
-    r
-    s
-    t
-    u
-    v
-    w
-    x
-    y
-    z
-    æ
-    ø
-    å
-  )
-  for i := 0; i < len(alphabet); i++ {
-    if char == alphabet[i] {
-      break
-    }
-  }
-  switch (i) {
-  case a:
-    return a
-  case b:
-    return b
-  case c:
-    return c
-  case d:
-    return d
-  case e:
-    return e
-  case f:
-    return f
-  case g:
-    return g
-  case h:
-    return h
-  case i:
-    return i
-  case j:
-    return j
-  case k:
-    return k
-  case l:
-    return l
-  case m:
-    return m
-  case n:
-    return n
-  case o:
-    return o
-  case p:
-    return p
-  case q:
-    return q
-  case r:
-    return r
-  case s:
-    return s
-  case t:
-    return t
-  case u:
-    return u
-  case v:
-    return v
-  case w:
-    return w
-  case x:
-    return x
-  case y:
-    return y
-  case z:
-    return z
-  case æ:
-    return æ
-  case ø:
-    return ø
-  case å:
-    return å
-  }
+
+// Write a database with data of the wikipedia register (data from Register(...) method) - should be used if FileExists method returns false
+func CreateDB(data map[string]int) (err error) {
+	f, err := os.Create("wikidb.dat")
+	defer f.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	for key, item := range(data) {
+		fmt.Fprintln(f, key, item)
+	}
 }
-*/
+
+// Read the database with the wikipedia register (data from Register(...) method) - should be used it FileExists method return true
+func ReadDB() (data map[string]int, err error) {
+	exists, err := filexists("wikidb.dat")
+	if exists == false { return nil, err }
+	f, err := os.Open("wikidb.dat")
+	fscanner := bufio.NewScanner(f)
+	strkeydataarr := make([]string, 2)
+	data = make(map[string]int)
+	for fscanner.Scan() {
+		strkeydataarr = strings.Split(fscanner.Text(), " ")
+		data[strkeydataarr[0]], err = strconv.Atoi(strkeydataarr[1])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return data, nil
+}
+
+// Check if a file exists, returns true if so, otherwise false, returns error for pragmatic purposes as well. - used to check if wikidb.dat exists (data from Register(...) method)
+func FileExists(file string) (bool, err error) {
+	_, err = os.Stat(file)
+	if os.IsExist(err) { return true, nil }
+	if os.IsNotExist(err) { return false, nil }
+	return false, err
+}
+
+// Don't know how to apply this yet, as of now just calculate the paths from an article to another with Djikstra.
+// Maybe pagerank the articles from the path and calculate shortest path to the top 5 articles with best pagerank.
+// Or maybe create a DB with links with a depth of 7 from a base article, e.g Biology, History, etc. (those related to school subjects), and then take the top 5 pageranked articles from a calculated djikstra path.
+func PageRank(depth, links int)  {
+	
+}
