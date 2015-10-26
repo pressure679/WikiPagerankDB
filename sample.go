@@ -147,9 +147,11 @@ func (pg PageItems) GetSections() error {
 	}
 	pg.Sections = make(map[string]string)
 	for i := 0; i < len(index); i++ {
-		if len(index) <= i * 2 + 1 { continue }
-		fmt.Println(pg.Text[index[i][0]:index[i][1]])
-		//sections = append(sections, txt[index[i][0]:index[i][1]])
+                if i < len(index) - 1 {
+                        pg.Sections[pg.Text[index[i][0]:index[i][1]]] = [pg.Text[index[i][1] + 1:index[i+1][0] - 1]]
+                } else {
+                        pg.Sections[pg.Text[index[i][0]:index[i][1]]] = pg.Text[index[i][1] + 1:len(pg.Text)]
+                }
 	}
 	return nil
 }
