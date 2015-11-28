@@ -16,7 +16,7 @@
 package main
 import (
 	"fmt"
-	"mypkgs/dijkstra"
+	"github.com/pressure679/dijkstra"
 )
 func main() {
 	// Making edges
