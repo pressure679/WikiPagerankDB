@@ -1,4 +1,19 @@
-package djikstra
+//    This is a modified version of the one from http://rosettacode.org/wiki/Dijkstra's_algorithm#Go , and it is modified to fit as a Go package.
+//    Copyright (C) 2015  Vittus Peter Ove Maqe Mikiassen
+//
+//    This program is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+//
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public License
+//    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+package dijkstra
 import (
 	"container/heap"
 	"math"
@@ -15,9 +30,7 @@ func NewEdge(newvert1, newvert2 string, newdist int) Edge {
 		Dist: newdist,
 	}
 }
-func LinkGraph(graph []Edge, directed bool,
-	start, end string) (allNodes []*Node, startNode, endNode *Node) {
-
+func LinkGraph(graph []Edge, directed bool, start, end string) (allNodes []*Node, startNode, endNode *Node) {
 	all := make(map[string]*Node)
 	// one pass over graph to collect nodes and link neighbors
 	for _, e := range graph {
