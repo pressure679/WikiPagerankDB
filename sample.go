@@ -14,8 +14,8 @@
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+		You should have received a copy of the GNU General Public License
+		along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 // Package main provides ...
 package main
@@ -32,14 +32,13 @@ import (
 	"errors"
 	"log"
 	"github.com/dustin/go-wikiparse"
+	"mypkgs/dijkstra"
 	//"github.com/alixaxel/pagerank"
-	//"djikstra"
 	//"testing"
 )
 type PageItems struct {
-	Links []string
-	Sections map[string]string
-	Text string
+	Sections map[string]string // Sections (Text) from a wiki article
+	Edges []dijkstra.Edge // Links from a wiki article
 	//reftohere []string
 	//pagerank float64
 }
@@ -48,7 +47,8 @@ func main() {
 	WikiArticles = make(map[string]*PageItems)
 	var wg sync.WaitGroup
 	file := "enwiki-latest-pages-articles1.xml-p000000010p000010000.bz2"
-
+	/*
+  // Wait with this until the dijkstra method is complete
 	if exists, _ := FileExists(); exists == false {
 		fmt.Println("file exists:", exists)
 		WikiRegister = Register(WikiRegister, wikijsonin)
@@ -60,16 +60,18 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+  */
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println("recovered in main")
 		}
 	}()
 	WikiArticles, err = ReadWikiXML()
+	
+	/*
 	for i := range(WikiArticles) {
 		fmt.Println(len(WikiArticles))
 	}
-	/*
 	for i := range WikiArticles {
 		fmt.Println(i)
 		fmt.Println()
@@ -95,32 +97,29 @@ func DecompressBZip (file string) (io.Reader, error) {
 func ReadWikiXML() (WikiArticles map[string]*PageItems, err error) {
 	wikijsonin, err := DecompressBZip(file)
 	if err != nil {
-		nil, err
+		return nil, err
 	}
 	parser, err := wikiparse.NewParser(wikijsonin)
 	if err != nil {
-		nil, err
+		return nil, err
 	}
-	for i := 0; i < 10; i++ {
+	for err == nil {
 		page, err := parser.Next()
 		if err != nil {
 			err = errors.New("Error while extracting wikipedia page data, attempting to recover")
-			nil, err
+			return nil, err
 		}
 		WikiArticles[page.Title] = &PageItems{}
 		for i := 0; i < len(page.Revisions); i++ {
 			// if text is not nil then add to WikiArticles text and sections to WikiArticles 
 			if page.Revisions[i].Text != "" {
-				WikiArticles[page.Title].Text = page.Revisions[i].Text
 				WikiArticles[page.Title].GetSections(WikiArticles[page.Title].Sections, page.Revisions[i].Text, page.Title)
 			}
-			
-			WikiArticles[page.Title].Links = wikiparse.FindLinks(page.Revisions[i].Text)
-			// If there are links add them to WikiArticles
-			for i := range WikiArticles[page.Title].Links {
-				if WikiArticles[WikiArticles[page.Title].Links[i]] == nil {
-					WikiArticles[WikiArticles[page.Title].Links[i]] = &PageItems{} // Adds a link from the wiki article to WikiArticles
-				}
+
+			// Add links in article to our collection
+			links := wikiparse.FindLinks(page.Revisions[i].Text)
+			for _, aLink := range(links) {
+				WikiArticles[page.Title].Edges = append(WikiArticles[page.Title].Edges, dijkstra.NewEdge(page.Title, aLink, 1))
 			}
 		}
 	}
@@ -128,7 +127,7 @@ func ReadWikiXML() (WikiArticles map[string]*PageItems, err error) {
 }
 
 // Get sections from a wikipedia article
-func (pg PageItems) GetSections() error {
+func (pi PageItems) GetSections() error {
 	// Make a regexp search object
 	re, err := regexp.Compile("[=]{2,5}.{1,50}[=]{2,5}")
 	if err != nil {
@@ -136,22 +135,28 @@ func (pg PageItems) GetSections() error {
 	}
 
 	// Check if article has a text
-	if pg.Text == "" {
-		fmt.Println("page \"", pg.Title, "\" text is \"\"")
+	// Debugging purposes
+	/*
+	if pi.Text == "" {
+		fmt.Println("page \"", pi.Title, "\" text is \"\"")
 	}
+  */
 
 	// 
-	index := re.FindAllStringIndex(pg.Text, -1)
+	index := re.FindAllStringIndex(pi.Text, -1)
 	if len(index) == 0 {
-		return errors.New("page \"" + pg.Title + "\"'s index is 0")
+		return errors.New("page " + pi.Title + "'s index is 0")
 	}
-	pg.Sections = make(map[string]string)
+	
+	pi.Sections = make(map[string]string)
 	for i := 0; i < len(index); i++ {
-                if i < len(index) - 1 {
-                        pg.Sections[pg.Text[index[i][0]:index[i][1]]] = [pg.Text[index[i][1] + 1:index[i+1][0] - 1]]
-                } else {
-                        pg.Sections[pg.Text[index[i][0]:index[i][1]]] = pg.Text[index[i][1] + 1:len(pg.Text)]
-                }
+		if i == 0 {
+			pi.Sections["Summary"] = pi.Text[:index[i][0]-1]
+		} else if i < len(index)-1 {
+			pi.Sections[pi.Text[index[i][0]:index[i][1]]] = [pi.Text[index[i][1]:index[i+1][0]]]
+		} else {
+			pi.Sections[pi.Text[index[i][0]:index[i][1]]] = pi.Text[index[i][1]:len(pi.Text)]
+		}
 	}
 	return nil
 }
@@ -164,142 +169,83 @@ func FileExists(file string) (bool, error) {
 	return true, err
 }
 
-// Don't know how to apply this yet, as of now just calculate the paths from an article to another with Djikstra.
-// Maybe pagerank the articles from the path and calculate shortest path to the top 5 articles with best pagerank.
-// Or maybe create a DB with links with a depth of 7 from a base article, e.g Biology, History, etc. (those related to school subjects), and then take the top 5 pageranked articles from a calculated djikstra path.
-/*
-func PageRank(depth, links int)  {
-	djikstra.
+// create and links articles (This method is first used when all articles have been read).
+// The shortest path is to be calculated and returned
+// The edges/links to have in memory has to be relatively low to save memory.
+// The amount of edges/links is to be defined by the main method, and it should give the relevant articles as argument (by using control flow statements).
+func DjikstraIt(allNodes []*dijkstra.Node, startNode, endNode *dijkstra.Node, WikiArticles map[string]*PageItems) (path []dijkstra.Path) {
+	return dijkstra.Dijkstra(allNodes, startNode, endNode)
 }
-*/
 
-func CreateDB(WikiArticles map[string]*PageItems) error {
-	var f os.File
-	var lastletter string
-	var err error
-	for key, item = range(WikiArticles) {
-		if lastletter != strings.ToLower(key[:1]) {
-			lastletter = strings.ToLower(key[:1])
-			switch strings.ToLower(key[:1]) {
-			case "a":
-				f, err = os.Create("a.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "b":
-				f, err = os.Create("b.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "c":
-				f, err = os.Create("c.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "d":
-				f, err = os.Create("d.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "e":
-				f, err = os.Create("e.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "f":
-				f, err = os.Create("f.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "g":
-				f, err = os.Create("g.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "h":
-				f, err = os.Create("h.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "i":
-				f, err = os.Create("i.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "j":
-				f, err = os.Create("j.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "k":
-				f, err = os.Create("k.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "l":
-				f, err = os.Create("l.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "m":
-				f, err = os.Create("m.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "n":
-				f, err = os.Create("n.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "o":
-				f, err = os.Create("o.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "p":
-				f, err = os.Create("p.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "q":
-				f, err = os.Create("q.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "r":
-				f, err = os.Create("r.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "s":
-				f, err = os.Create("s.dat")
-				defer f.Close()
-			case "t":
-				f, err = os.Create("t.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "u":
-				f, err = os.Create("u.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "v":
-				f, err = os.Create("v.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "w":
-				f, err = os.Create("w.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "x":
-				f, err = os.Create("x.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "y":
-				f, err = os.Create("y.dat")
-				defer f.Close()
-				if err != nil { return err }
-			case "z":
-				f, err = os.Create("z.dat")
-				defer f.Close()
-				if err != nil { return err }
-		fmt.Fprintln(f, key)
-		for i := 0; i < len(item); i++ {
-			switch i {
-			case 0:
-				fmt.Fprintln(f, "Links:", item)
-			case 1:
-				fmt.Fprintln(f, "Sections:", item)
-			case 2:
-				fmt.Fprintln(f, "Text:", item)
-			}
+// Create database with index of the name of first and last article of each wikipedia file.
+func CreateDB(articles []string, wikiFileName string, WikiArticles[string]*PageItems) error {
+	var firstAndLastArticle []string
+	firstAndLastArticle = make([]string, 2)
+	counter := 0
+	mapLen := len(articles)
+	for key, _ = range(articles) {
+		counter++
+		switch counter {
+		case 1:
+			firstAndLastArticle[0] = key
+		case mapLen:
+			firstAndLastArticle[1] = key
 		}
-			}
+	}
+	if exists, existserr := FileExists(firstAndLastArticle[0] + "-" + firstAndLastArticle[1] + ".org"); existserr == nil {
+		db, err := os.OpenFile(firstAndLastArticle[0] + "-" + firstAndLastArticle[1] + ".org", os.O_RDWR|os.O_APPEND, 0660)
+		defer db.Close()
+		if err != nil {
+			return err
 		}
+		writeTXT(db, WikiArticles)
+	} else if exists == false {
+		db, err := os.Create(firstAndLastArticle[0] + "-" + firstAndLastArticle[1] + ".org")
+		defer db.Close()
+		if err != nil {
+			return err
+		}
+		writeTXT(db, WikiArticles)
 	}
 }
 
-func ReadDB(file string) (WikiArticles map[string]*PageItems, err error) {
-	file, err := os.Open(file)
+// Writing the WikiArticles items in emacs-org format (used by CreateDB)
+func writeTXT(db os.File, WikiArticles[string]*PageItems) {
+	fwriter := bufio.NewWriter(db)
+	for articleName, _ = range(articles) {
+		fmt.Fprintln(fwriter, "* " + articleName)
+		fmt.Fprintln(fwriter, "** Sections")
+		for sectionName, sectionText := range(WikiArticles[key].Sections) {
+			fmt.Fprintln(fwriter, "*** " + sectionName)
+			fmt.Fprintln(fwriter, "    " + sectionText)
+		}
+		fmt.Fprintln(fwriter, "** Links")
+		// TODO: differ between Edges and Nodes (write the link for this article, not the article's name)
+		for linkNum, linkName := range(WikiArticles[key].Edges) {
+			fmt.Fprintln(fwriter, "   " + linkNum + "-" + linkName)
+		}
+		// TODO: add a section with links to articles with a depth of 7 (dijkstra + pagerank noticeable optimization)
+	}
+	fwriter.Flush()
+}
+
+// Read the index of all wikipedia articles into a map with key as article file name and item as first and last article name
+// TODO (update to make it fit with CreateDB
+func ReadDB() (wikiArticles map[string]string, err error) {
+	wikiArticles = make(map[string]string)
+	var splittedIndex []string = make([]string, 3)
+	var splittedDijkstra []string = make([]string, 2)
+	if exists, err := FileExists("index.txt"); err == nil {
+		file, err := os.Open("index.txt")
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			splitted = strings.Split(scanner.Text(), "-")
+			wikiArticles[splitted[0]] = splitted[1] + "-" + splitted[2]
+		}
+	} else if exists == false {
+		fmt.Printf("Database not created\n")
+		err = errors.New("Database not created")
+		return nil, err
+	}
+	return wikiArticles, nil
 }
