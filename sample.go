@@ -66,8 +66,25 @@ func main() {
 			fmt.Println("recovered in main")
 		}
 	}()
-	WikiArticles, err = ReadWikiXML()
-	
+		wikijsonin, err := DecompressBZip(file)
+	if err != nil {
+		return nil, err
+	}
+	parser, err := wikiparse.NewParser(wikijsonin)
+	if err != nil {
+		return nil, err
+	}
+	for err == nil {
+		page, err := parser.Next()
+		if err != nil {
+			panic(err)
+		}
+		WikiArticles[page.Title].ReadWikiXML(page)
+		if err != nil {
+			panic(err)
+		}
+		WikiArticles[page.Title].GetSections()
+	}
 	/*
 	for i := range(WikiArticles) {
 		fmt.Println(len(WikiArticles))
@@ -94,40 +111,23 @@ func DecompressBZip (file string) (io.Reader, error) {
 }
 
 // Read Wikipedia Articles from a Wikimedia XML dump bzip file, return the Article with titles as map keys and PageItems (Links, Sections and Text) as items - Also add Section "See Also"
-func ReadWikiXML() (WikiArticles map[string]*PageItems, err error) {
-	wikijsonin, err := DecompressBZip(file)
-	if err != nil {
-		return nil, err
-	}
-	parser, err := wikiparse.NewParser(wikijsonin)
-	if err != nil {
-		return nil, err
-	}
-	for err == nil {
-		page, err := parser.Next()
-		if err != nil {
-			err = errors.New("Error while extracting wikipedia page data, attempting to recover")
-			return nil, err
+func (collection *PageItems) ReadWikiXML(page wikiparse.Page) {
+	for i := 0; i < len(collection.Revisions); i++ {
+		// if text is not nil then add to WikiArticles text and sections to WikiArticles 
+		if collection.Revisions[i].Text != "" {
+			WikiArticles[collection.Title].GetSections(WikiArticles[collection.Title].Sections, collection.Revisions[i].Text, collection.Title)
 		}
-		WikiArticles[page.Title] = &PageItems{}
-		for i := 0; i < len(page.Revisions); i++ {
-			// if text is not nil then add to WikiArticles text and sections to WikiArticles 
-			if page.Revisions[i].Text != "" {
-				WikiArticles[page.Title].GetSections(WikiArticles[page.Title].Sections, page.Revisions[i].Text, page.Title)
-			}
 
-			// Add links in article to our collection
-			links := wikiparse.FindLinks(page.Revisions[i].Text)
-			for _, aLink := range(links) {
-				WikiArticles[page.Title].Edges = append(WikiArticles[page.Title].Edges, dijkstra.NewEdge(page.Title, aLink, 1))
-			}
+		// Add links in article to our collection
+		links := wikiparse.FindLinks(collection.Revisions[i].Text)
+		for _, aLink := range(links) {
+			WikiArticles[collection.Title].Edges = append(WikiArticles[collection.Title].Edges, dijkstra.NewEdge(collection.Title, aLink, 1))
 		}
 	}
-	return
 }
 
 // Get sections from a wikipedia article
-func (pi PageItems) GetSections() error {
+func (collection *PageItems) GetSections() error {
 	// Make a regexp search object
 	re, err := regexp.Compile("[=]{2,5}.{1,50}[=]{2,5}")
 	if err != nil {
@@ -137,25 +137,25 @@ func (pi PageItems) GetSections() error {
 	// Check if article has a text
 	// Debugging purposes
 	/*
-	if pi.Text == "" {
-		fmt.Println("page \"", pi.Title, "\" text is \"\"")
+	if collection.Text == "" {
+		fmt.Println("page \"", collection.Title, "\" text is \"\"")
 	}
   */
 
 	// 
-	index := re.FindAllStringIndex(pi.Text, -1)
+	index := re.FindAllStringIndex(collection.Text, -1)
 	if len(index) == 0 {
-		return errors.New("page " + pi.Title + "'s index is 0")
+		return errors.New("collection " + collection.Title + "'s index is 0")
 	}
 	
-	pi.Sections = make(map[string]string)
+	collection.Sections = make(map[string]string)
 	for i := 0; i < len(index); i++ {
 		if i == 0 {
-			pi.Sections["Summary"] = pi.Text[:index[i][0]-1]
+			page.Sections["Summary"] = collection.Text[:index[i][0]-1]
 		} else if i < len(index)-1 {
-			pi.Sections[pi.Text[index[i][0]:index[i][1]]] = [pi.Text[index[i][1]:index[i+1][0]]]
+			page.Sections[page.Text[index[i][0]:index[i][1]]] = [page.Text[index[i][1]:index[i+1][0]]]
 		} else {
-			pi.Sections[pi.Text[index[i][0]:index[i][1]]] = pi.Text[index[i][1]:len(pi.Text)]
+			page.Sections[page.Text[index[i][0]:index[i][1]]] = page.Text[index[i][1]:len(page.Text)]
 		}
 	}
 	return nil
@@ -173,8 +173,9 @@ func FileExists(file string) (bool, error) {
 // The shortest path is to be calculated and returned
 // The edges/links to have in memory has to be relatively low to save memory.
 // The amount of edges/links is to be defined by the main method, and it should give the relevant articles as argument (by using control flow statements).
-func DjikstraIt(allNodes []*dijkstra.Node, startNode, endNode *dijkstra.Node, WikiArticles map[string]*PageItems) (path []dijkstra.Path) {
-	return dijkstra.Dijkstra(allNodes, startNode, endNode)
+func DijkstraIt(allNodes []*dijkstra.Node, startNode, endNode *dijkstra.Node, WikiArticles map[string]*PageItems) (path []dijkstra.Path) {
+	// read and copy/paste/modify from line 176 in github.com/pressure679/WikiPageRankDB/dijsktra.go
+	return dijkstra.Init(allNodes, startNode, endNode)
 }
 
 // Create database with index of the name of first and last article of each wikipedia file.
@@ -220,9 +221,9 @@ func writeTXT(db os.File, WikiArticles[string]*PageItems) {
 			fmt.Fprintln(fwriter, "    " + sectionText)
 		}
 		fmt.Fprintln(fwriter, "** Links")
-		// TODO: differ between Edges and Nodes (write the link for this article, not the article's name)
+		// TODO: differ between Edges and Nodes (write the node number of this article, and then the node number for the linked article's - also write 1st node number and last node number in the file's name.
 		for linkNum, linkName := range(WikiArticles[key].Edges) {
-			fmt.Fprintln(fwriter, "   " + linkNum + "-" + linkName)
+			fmt.Fprintln(fwriter, "   - " + linkNum + " - " + linkName)
 		}
 		// TODO: add a section with links to articles with a depth of 7 (dijkstra + pagerank noticeable optimization)
 	}
@@ -230,22 +231,45 @@ func writeTXT(db os.File, WikiArticles[string]*PageItems) {
 }
 
 // Read the index of all wikipedia articles into a map with key as article file name and item as first and last article name
-// TODO (update to make it fit with CreateDB
-func ReadDB() (wikiArticles map[string]string, err error) {
-	wikiArticles = make(map[string]string)
+func (page *PageItems) (collection map[string]*PageItems) ReadDB() (collection map[string]*PageItems) error {
+	// wikiArticles = make(map[string]string)
 	var splittedIndex []string = make([]string, 3)
 	var splittedDijkstra []string = make([]string, 2)
-	if exists, err := FileExists("index.txt"); err == nil {
-		file, err := os.Open("index.txt")
+	var index, section, link bool = false
+	var buffer string
+	if err := FileExists("db.dat"); err == nil {
+		file, err := os.Open("db.dat")
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
-			splitted = strings.Split(scanner.Text(), "-")
-			wikiArticles[splitted[0]] = splitted[1] + "-" + splitted[2]
+			// TODO: read links and sections, links; do strings.Split when reading a link org-section, then append to edge. and read 
+			switch {
+			case strings.EqualFold(scanner.Text()[0, 2], "* "):
+				collection[scanner.Text()[2:]] = &PageItems{}
+				if section == true { section = false }
+				if link == true { link = false }
+			case strings.EqualFold(scanner.Text()[0, 3], "** "):
+				buffer = scanner.Text()[3:]
+				collection[buffer] = &PageItems{}
+				if strings.EqualFold(buffer, "Links"} {
+					section = false
+					link = true
+				}
+				if strings.EqualFold(buffer, "Sections") {
+					link = false
+					section = true
+				}
+			case strings.EqualFold(scanner.Text()[0, 4], "*** "):
+				buffer = strings.Split(scanner.Text(), " ")[4:]
+			}
+			if link == true && !strings.EqualFold(, "Links") {
+
+			}
+			if section == true && !strings.EqualFold(buffer, "Sections") {
+			wikiArticles["] = splitted[1] + "-" + splitted[2]
+			}
 		}
 	} else if exists == false {
-		fmt.Printf("Database not created\n")
-		err = errors.New("Database not created")
-		return nil, err
+		return errors.New("Database not created")
 	}
-	return wikiArticles, nil
+	return nil
 }
