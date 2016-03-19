@@ -17,84 +17,93 @@ package dijkstra
 import (
 	"container/heap"
 	"math"
+	"os"
+	"bufio"
+	"fmt"
+	"strings"
+	"strconv"
+	"bytes"
 )
 // edge struct holds the bare data needed to define a graph.
-type Edge struct {
-	Vert1, Vert2 string
-	Dist         int
+type Node struct {
+	Vert string     // vertex name
+	Nbs  []Neighbor // edges from this vertex
+	tent int        // tentative distance
+	prev *Node      // previous node in shortest path back to start
+	done bool       // true when tent and prev represent shortest path
+	rx   int        // heap.Remove index
 }
-func NewEdge(newvert1, newvert2 string, newdist int) Edge {
-	return Edge{
-		Vert1: newvert1,
-		Vert2: newvert2,
-		Dist: newdist,
-	}
+type Neighbor struct {
+	Nd   *Node // node corresponding to vertex
+	Dist int   // distance to this node (from whatever node references this)
 }
-func LinkGraph(graph []Edge, directed bool, start, end string) (allNodes []*Node, startNode, endNode *Node) {
-	all := make(map[string]*Node)
+func (graph *Node) AppendNeighbor(neighbor Neighbor) {
+	graph.Nbs = append(graph.Nbs, neighbor)
+}
+type Path struct {
+	Path   []string
+	Length int
+}
+func LinkGraph(graph map[string]*Neighbor /*, start, end string */) (allNodes []*Node /*, startNode, endNode *Node */) {
 	// one pass over graph to collect nodes and link neighbors
-	for _, e := range graph {
-		n1 := all[e.Vert1]
-		n2 := all[e.Vert2]
+	/* for node, _ := range(graph) {
 		// add previously unseen nodes
-		if n1 == nil {
-			n1 = &Node{Vert: e.Vert1}
-			all[e.Vert1] = n1
+		if graph[node] == nil {
+			graph[node] = &Node{Vert: neighbors.Vert}
 		}
-		if n2 == nil {
-			n2 = &Node{Vert: e.Vert2}
-			all[e.Vert2] = n2
-		}
+
 		// link neighbors
-		n1.Nbs = append(n1.Nbs, Neighbor{n2, e.Dist})
-		if !directed {
-			n2.Nbs = append(n2.Nbs, Neighbor{n1, e.Dist})
+		for _, neighbor := range(graph[node].Nbs) {
+			graph[node].Nbs = append(graph[node].Nbs, Neighbor{graph[neighbor.Vert], 1})
+			// if !directed {
+			graph[neighbor.Vert].Nbs = append(graph[neighbor].Nbs, Neighbor{graph[node.Vert], 1})
 		}
-	}
-	allNodes = make([]*Node, len(all))
-	var n int
-	for _, nd := range all {
-		allNodes[n] = nd
+	} */
+	allNodes = make([]*Node, len(graph))
+	var n int = 1
+	
+	for _, nd := range(graph) {
+		allNodes[n] = nd.Nd
 		n++
 	}
-	return allNodes, all[start], all[end]
+	return allNodes /*, all[start], all[end] */
 }
 func Dijkstra(allNodes []*Node, startNode, endNode *Node) (pl []Path) {
 	// WP steps 1 and 2.
-	for _, nd := range allNodes {
-		nd.Tent = math.MaxInt32
-		nd.Done = false
-		nd.Prev = nil
-		nd.Rx = -1
+	for _, node := range allNodes {
+		node.tent = math.MaxInt32
+		node.done = false
+		node.prev = nil
+		node.rx = -1
 	}
 	current := startNode
-	current.Tent = 0
+	current.tent = 0
 	var unvis ndList
 
 	for {
 		// WP step 3: update tentative distances to neighbors
-		for _, nb := range current.Nbs {
-			if nd := nb.Nd; !nd.Done {
-				if d := current.Tent + nb.Dist; d < nd.Tent {
-					nd.Tent = d
-					nd.Prev = current
-					if nd.Rx < 0 {
+		for _, nb := range(current.Nbs) {
+			if nd := nb.Nd; !nd.done {
+				if d := current.tent + nb.Dist; d < nd.tent {
+					nd.tent = d
+					nd.prev = current
+					if nd.rx < 0 {
 						heap.Push(&unvis, nd)
 					} else {
-						heap.Fix(&unvis, nd.Rx)
+						heap.Fix(&unvis, nd.rx)
 					}
 				}
 			}
 		}
-		// WP step 4: mark current node visited, record path and distance
-		current.Done = true
-		if endNode == nil || current == endNode {
+		// WP step 4: mark startNode node visited, record path and distance
+		startNode.done = true
+		if endNode == nil || startNode == endNode {
 			// record path and distance for return value
-			distance := current.Tent
+			distance := startNode.tent
 			// recover path by tracing prev links,
 			var p []string
-			for ; current != nil; current = current.Prev {
-				p = append(p, current.Vert)
+			for ; startNode != nil; startNode = startNode.prev {
+				p = append(p, startNode.Vert)
 			}
 			// then reverse list
 			for i := (len(p) + 1) / 2; i > 0; i-- {
@@ -109,41 +118,23 @@ func Dijkstra(allNodes []*Node, startNode, endNode *Node) (pl []Path) {
 		if len(unvis) == 0 {
 			break // WP step 5 (case of no more reachable nodes)
 		}
-		// WP step 6: new current is node with smallest tentative distance
-		current = heap.Pop(&unvis).(*Node)
+		// WP step 6: new startNode is node with smallest tentative distance
+		startNode = heap.Pop(&unvis).(*Node)
 	}
 	return
 }
-type Node struct {
-	Vert string     // vertex name
-	Tent int        // tentative distance
-	Prev *Node      // previous node in shortest path back to start
-	Done bool       // true when tent and prev represent shortest path
-	Nbs  []Neighbor // edges from this vertex
-	Rx   int        // heap.Remove index
-}
-type Neighbor struct {
-	Nd   *Node // node corresponding to vertex
-	Dist int   // distance to this node (from whatever node references this)
-}
-// return type
-type Path struct {
-	Path   []string
-	Length int
-}
-
 // ndList implements container/heap
 type ndList []*Node
 func (n ndList) Len() int           { return len(n) }
-func (n ndList) Less(i, j int) bool { return n[i].Tent < n[j].Tent }
+func (n ndList) Less(i, j int) bool { return n[i].tent < n[j].tent }
 func (n ndList) Swap(i, j int) {
 	n[i], n[j] = n[j], n[i]
-	n[i].Rx = i
-	n[j].Rx = j
+	n[i].rx = i
+	n[j].rx = j
 }
 func (n *ndList) Push(x interface{}) {
 	nd := x.(*Node)
-	nd.Rx = len(*n)
+	nd.rx = len(*n)
 	*n = append(*n, nd)
 }
 func (n *ndList) Pop() interface{} {
@@ -151,57 +142,57 @@ func (n *ndList) Pop() interface{} {
 	last := len(s) - 1
 	r := s[last]
 	*n = s[:last]
-	r.Rx = -1
+	r.rx = -1
 	return r
 }
-
-/*
-// NewEdge(vert1, vert2, dist, graph)
-// allNodes, startNode, endNode := LinkGraph(graph, directed, start, end)
-// paths := Dijkstra(allNodes, startNode, endNode)
-
-func main() {
-	// example data and parameters
-	graph := []Edge{
-		{"a", "b", 7},
-		{"a", "c", 9},
-		{"a", "f", 14},
-		{"b", "c", 10},
-		{"b", "d", 15},
-		{"c", "d", 11},
-		{"c", "f", 2},
-		{"d", "e", 6},
-		{"e", "f", 9},
+func CreateDB(Graph []*Node, FileName string) error {
+	file, err := os.Open("dijkstra.dat")
+	if err != nil {
+		return err
 	}
-	directed := true
-	start := "a"
-	end := "e"
-	findAll := false
-
-	// construct linked representation of example data
-	allNodes, startNode, endNode := linkGraph(graph, directed, start, end)
-	if directed {
-		fmt.Print("Directed")
-	} else {
-		fmt.Print("Undirected")
+	defer file.Close()
+	fwriter := bufio.NewWriter(file)
+	for _, node := range(Graph) {
+		fmt.Fprintln(fwriter, node.Vert)
+		for _, neighbor := range(node.Nbs) {
+			fmt.Fprintln(fwriter, " " + strconv.Itoa(neighbor.Dist) + "-" + neighbor.Nd.Vert)
+		}
 	}
-	fmt.Printf(" graph with %d nodes, %d edges\n", len(allNodes), len(graph))
-	if startNode == nil {
-		fmt.Printf("start node %q not found in graph\n", start)
-		return
-	}
-	if findAll {
-		endNode = nil
-	} else if endNode == nil {
-		fmt.Printf("end node %q not found in graph\n", end)
-		return
-	}
-
-	// run Dijkstra's shortest path algorithm
-	paths := dijkstra(allNodes, startNode, endNode)
-	fmt.Println("Shortest path(s):")
-	for _, p := range paths {
-		fmt.Println(p.path, "length", p.length)
-  }
+	return nil
 }
-*/
+func ReadDB(FileName string) (err error, Graph []*Node) {
+	file, err := os.Open(FileName)
+	if err != nil {
+		return err, nil
+	}
+	fReader := bufio.NewReader(file)
+	var node *Node
+	var neighbor *Neighbor
+	strSplit := make([]string, 2)
+	var sliceToString bytes.Buffer
+	for {
+		line, _, err := fReader.ReadLine()
+		if err != nil {
+			return err, nil
+		}
+		sliceToString.Write(line)
+		strLine := sliceToString.String()
+		if !strings.EqualFold(strLine[0:1], " ") {
+			node.Vert = strLine
+		} else {
+			for strings.EqualFold(strLine[:1], " ") {
+				strSplit = strings.Split(strLine[1:], "-")
+				distInt64, err  := strconv.ParseInt(strSplit[0], 10, 0)
+				if err != nil {
+					return err, nil
+				}
+				neighbor.Dist = int(distInt64)
+				neighbor.Nd.Vert = strSplit[1]
+				fReader.ReadLine()
+				node.AppendNeighbor(*neighbor)
+			}
+		}
+		Graph = append(Graph, node)
+	}
+	return
+}
