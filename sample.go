@@ -38,7 +38,7 @@ import (
 )
 type PageItems struct {
 	Sections map[string]string // Sections (Text) from a wiki article
-	Edges []dijkstra.Edge // Links from a wiki article
+	Node *dijkstra.Node // Links from a wiki article
 	//reftohere []string
 	//pagerank float64
 }
@@ -188,7 +188,7 @@ func CreateDB(articles []string, wikiFileName string, WikiArticles[string]*PageI
 		counter++
 		switch counter {
 		case 1:
-			firstAndLastArticle[0] = key
+			firstAndLastArticle[0] = key + "$" + 
 		case mapLen:
 			firstAndLastArticle[1] = key
 		}
@@ -211,12 +211,12 @@ func CreateDB(articles []string, wikiFileName string, WikiArticles[string]*PageI
 }
 
 // Writing the WikiArticles items in emacs-org format (used by CreateDB)
-func writeTXT(db os.File, WikiArticles[string]*PageItems) {
+func writeTXT(db os.File, articles WikiArticles[string]*PageItems) {
 	fwriter := bufio.NewWriter(db)
 	for articleName, _ = range(articles) {
 		fmt.Fprintln(fwriter, "* " + articleName)
 		fmt.Fprintln(fwriter, "** Sections")
-		for sectionName, sectionText := range(WikiArticles[key].Sections) {
+		for sectionName, sectionText := range(WikiArticles[articleName].Sections) {
 			fmt.Fprintln(fwriter, "*** " + sectionName)
 			fmt.Fprintln(fwriter, "    " + sectionText)
 		}
@@ -231,7 +231,7 @@ func writeTXT(db os.File, WikiArticles[string]*PageItems) {
 }
 
 // Read the index of all wikipedia articles into a map with key as article file name and item as first and last article name
-func (page *PageItems) (collection map[string]*PageItems) ReadDB() (collection map[string]*PageItems) error {
+func (page *PageItems) ReadDB(file string, collection map[string]*PageItems) (collection map[string]*PageItems) error {
 	// wikiArticles = make(map[string]string)
 	var splittedIndex []string = make([]string, 3)
 	var splittedDijkstra []string = make([]string, 2)
@@ -243,7 +243,7 @@ func (page *PageItems) (collection map[string]*PageItems) ReadDB() (collection m
 		for scanner.Scan() {
 			// TODO: read links and sections, links; do strings.Split when reading a link org-section, then append to edge. and read 
 			switch {
-			case strings.EqualFold(scanner.Text()[0, 2], "* "):
+			case strings.EqualFold(scanner.Text()[0:2], "* "):
 				collection[scanner.Text()[2:]] = &PageItems{}
 				if section == true { section = false }
 				if link == true { link = false }
@@ -261,11 +261,11 @@ func (page *PageItems) (collection map[string]*PageItems) ReadDB() (collection m
 			case strings.EqualFold(scanner.Text()[0, 4], "*** "):
 				buffer = strings.Split(scanner.Text(), " ")[4:]
 			}
-			if link == true && !strings.EqualFold(, "Links") {
-
+			if link == true && !strings.EqualFold(buffer, "Links") {
+				
 			}
 			if section == true && !strings.EqualFold(buffer, "Sections") {
-			wikiArticles["] = splitted[1] + "-" + splitted[2]
+				wikiArticles[buffer] = splitted[1] + "-" + splitted[2]
 			}
 		}
 	} else if exists == false {
