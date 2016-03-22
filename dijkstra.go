@@ -25,6 +25,7 @@ import (
 	"bytes"
 )
 // edge struct holds the bare data needed to define a graph.
+
 type Node struct {
 	Vert string     // vertex name
 	Nbs  []Neighbor // edges from this vertex
@@ -37,16 +38,23 @@ type Neighbor struct {
 	Nd   *Node // node corresponding to vertex
 	Dist int   // distance to this node (from whatever node references this)
 }
-func (graph *Node) AppendNeighbor(neighbor Neighbor) {
-	graph.Nbs = append(graph.Nbs, neighbor)
+func (graph *Node) AppendNeighbor(Name string, Dist int) {
+	var nd *Node
+	nd = &Node{}
+	nd.Vert = Name
+	neighbor := &Neighbor{
+		Nd: nd,
+		Dist: 1,
+	}
+	graph.Nbs = append(graph.Nbs, *neighbor)
 }
 type Path struct {
 	Path   []string
 	Length int
 }
-func LinkGraph(graph map[string]*Neighbor /*, start, end string */) (allNodes []*Node /*, startNode, endNode *Node */) {
+/* func LinkGraph(graph map[string]*Neighbor, start, end string) (allNode []*Node, startNode, endNode *Node) {
 	// one pass over graph to collect nodes and link neighbors
-	/* for node, _ := range(graph) {
+	for node, _ := range(graph) {
 		// add previously unseen nodes
 		if graph[node] == nil {
 			graph[node] = &Node{Vert: neighbors.Vert}
@@ -58,19 +66,15 @@ func LinkGraph(graph map[string]*Neighbor /*, start, end string */) (allNodes []
 			// if !directed {
 			graph[neighbor.Vert].Nbs = append(graph[neighbor].Nbs, Neighbor{graph[node.Vert], 1})
 		}
-	} */
-	allNodes = make([]*Node, len(graph))
-	var n int = 1
-	
-	for _, nd := range(graph) {
-		allNodes[n] = nd.Nd
-		n++
 	}
-	return allNodes /*, all[start], all[end] */
-}
-func Dijkstra(allNodes []*Node, startNode, endNode *Node) (pl []Path) {
+	for _, node := range(graph) {
+		allNodes = append(allNodes, node)
+	}
+	return allNodes, all[start], all[end]
+} */
+func Dijkstra(Graph map[string]*Node, startNode, endNode *Node) (pl []Path) {
 	// WP steps 1 and 2.
-	for _, node := range allNodes {
+	for _, node := range(Graph) {
 		node.tent = math.MaxInt32
 		node.done = false
 		node.prev = nil
@@ -125,7 +129,7 @@ func Dijkstra(allNodes []*Node, startNode, endNode *Node) (pl []Path) {
 }
 // ndList implements container/heap
 type ndList []*Node
-func (n ndList) Len() int           { return len(n) }
+func (n ndList) Len() int { return len(n) }
 func (n ndList) Less(i, j int) bool { return n[i].tent < n[j].tent }
 func (n ndList) Swap(i, j int) {
 	n[i], n[j] = n[j], n[i]
@@ -145,10 +149,10 @@ func (n *ndList) Pop() interface{} {
 	r.rx = -1
 	return r
 }
-func CreateDB(Graph []*Node, FileName string) error {
-	file, err := os.Open("dijkstra.dat")
+func CreateDB(FileName string, Graph map[string]*Node) (err error) {
+	file, err := os.Open(FileName)
 	if err != nil {
-		return err
+		return
 	}
 	defer file.Close()
 	fwriter := bufio.NewWriter(file)
@@ -158,22 +162,22 @@ func CreateDB(Graph []*Node, FileName string) error {
 			fmt.Fprintln(fwriter, " " + strconv.Itoa(neighbor.Dist) + "-" + neighbor.Nd.Vert)
 		}
 	}
-	return nil
+	return
 }
-func ReadDB(FileName string) (err error, Graph []*Node) {
+func ReadDB(FileName string) (Graph map[string]*Node, err error) {
 	file, err := os.Open(FileName)
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
 	fReader := bufio.NewReader(file)
 	var node *Node
-	var neighbor *Neighbor
 	strSplit := make([]string, 2)
 	var sliceToString bytes.Buffer
+	Graph = make(map[string]*Node)
 	for {
 		line, _, err := fReader.ReadLine()
 		if err != nil {
-			return err, nil
+			return nil, err
 		}
 		sliceToString.Write(line)
 		strLine := sliceToString.String()
@@ -184,15 +188,14 @@ func ReadDB(FileName string) (err error, Graph []*Node) {
 				strSplit = strings.Split(strLine[1:], "-")
 				distInt64, err  := strconv.ParseInt(strSplit[0], 10, 0)
 				if err != nil {
-					return err, nil
+					return nil, err
 				}
-				neighbor.Dist = int(distInt64)
-				neighbor.Nd.Vert = strSplit[1]
 				fReader.ReadLine()
-				node.AppendNeighbor(*neighbor)
+				node.AppendNeighbor(strSplit[1], int(distInt64))
 			}
 		}
-		Graph = append(Graph, node)
+		Graph[node.Vert] = &Node{}
+		Graph[node.Vert] = node
 	}
-	return
+	return nil, err
 }
