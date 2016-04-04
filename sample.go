@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"io"
+	"io/ioutil"
 	"bufio"
 	"compress/bzip2"
 	"strings"
@@ -33,6 +34,8 @@ import (
 	"github.com/dustin/go-wikiparse"
 	"github.com/pressure679/dijkstra"
 	//"github.com/alixaxel/pagerank"
+	"database/sql"
+	"github.com/Masterminds/squirrel"
 	//"testing"
 )
 type PageItems struct {
@@ -45,62 +48,11 @@ func main() {
 	// var articles map[string]*PageItems
 	articles := make(map[string]*PageItems)
 	var wg sync.WaitGroup
-	file := "enwiki-latest-pages-articles1.xml-p000000010p000010000.bz2"
-	/*
-  // Wait with this until the dijkstra method is complete
-	if exists, _ := FileExists(); exists == false {
-		fmt.Println("file exists:", exists)
-		WikiRegister = Register(WikiRegister, wikijsonin)
-		CreateDB(WikiRegister)
-	} else if exists == true {
-		fmt.Println("file exists:", exists)
-		WikiRegister, err = ReadDB()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-  */
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println("recovered in main")
 		}
 	}()
-		wikijsonin, err := DecompressBZip(file)
-	if err != nil {
-		panic(err)
-	}
-	parser, err := wikiparse.NewParser(wikijsonin)
-	if err != nil {
-		panic(err)
-	}
-	for err == nil {
-		page, err := parser.Next()
-		if err != nil {
-			panic(err)
-		}
-		articles, err = ReadWikiXML(*page)
-		if err != nil {
-			panic(err)
-		}
-	}
-	err = dijkstra.CreateDB(articles, "dijkstradb.dat")
-	if err != nil {
-		panic(err)
-	}
-	
-	/*
-	for i := range(WikiArticles) {
-		fmt.Println(len(WikiArticles))
-	}
-	for i := range WikiArticles {
-		fmt.Println(i)
-		fmt.Println()
-	}
-	for i := range WikiRegister {
-		fmt.Println(i)
-		fmt.Println()
-	}
-  */
 }
 
 // use os.Open to make an io.Reader from bzip2.NewReader(os.File) to read wikipedia xml file
@@ -168,36 +120,49 @@ func GetSections(page, title string, i int) (sections map[string]string, err err
 }
 
 // Create database with index of the name of first and last article of each wikipedia file.
-func CreateDB(file string, articles map[string]*PageItems) error {
-	var firstAndLastArticle []string
-	firstAndLastArticle = make([]string, 2)
-	counter := -1
-	for key, _ := range(articles) {
-		counter++
-		if counter == 0 {
-			firstAndLastArticle[0] = key
-		} else {
-			firstAndLastArticle[1] = key
+func CreateDB() error {
+	driver := "postgres"
+	con, _ := sql.Open(driver, "dbname=wikidb sslmode=enable")
+	cache := squirrel.NewStmtCacheProxy(con)
+	files, err := ioutil.ReadDir("articles")
+	if err != nil { return err }
+	for _, file := range files {
+		articles := make(map[string]*PageItems)
+		wikijsonin, err := DecompressBZip(file)
+		if err != nil { return err }
+		parser, err := wikiparse.NewParser(wikijsonin)
+		if err != nil { return err }
+		for err == nil {
+			page, err := parser.Next()
+			if err != nil {
+				panic(err)
+			}
+			articles, err = ReadWikiXML(*page)
+			if err != nil {
+				panic(err)
+			}
+		}
+		for title, _ := range(articles) {
+			insQ := squirrel.Insert("articles").
+				Columns("article").
+				Values(title).
+				RunWith(db)
+			insQ.Exec()
+			for sectionName, body := range(articles[title].Sections) {
+				insQ = squirrel.Insert(title).
+					Columns(sectionName).
+					Values(body).
+					RunWith(db)
+				insQ.Exec()
+			}
 		}
 	}
-	// if exists, existserr := FileExists(firstAndLastArticle[0] + "-" + firstAndLastArticle[1] + ".org"); existserr == nil {
-	_, err := os.Stat(firstAndLastArticle[0] + "-" + firstAndLastArticle[1] + ".org")
-	if os.IsExist(err) {
-		return errors.New("file exists: " + firstAndLastArticle[0] + "-" + firstAndLastArticle[1] + ".org")
-	}
-	db, err := os.Create(firstAndLastArticle[0] + "-" + firstAndLastArticle[1] + ".org")
-	defer db.Close()
-	if err != nil {
-		return err
-	}
-	writeTXT(db, articles)
-	err = dijkstra.CreateDB("dijkstra" + "-" + firstAndLastArticle[0] + "-" + firstAndLastArticle[1], articles)
 	return nil
 }
 
-// Writing the articles items in emacs-org format (used by CreateDB)
+// Writing the articles items in emacs-org format (to write the path from article A to B and their top pageranking links in a presentable format)
 func writeTXT(db *os.File, articles map[string]*PageItems) {
-	fWriter := bufio.NewWriter(db)
+	fWriter := bufio.NewWriter()
 	for articleName, _ := range(articles) {
 		fmt.Fprintln(fWriter, "* " + articleName)
 		fmt.Fprintln(fWriter, "** Sections")
@@ -210,36 +175,8 @@ func writeTXT(db *os.File, articles map[string]*PageItems) {
 }
 
 // Read the index of all wikipedia articles into a map with key as article file name and item as first and last article name
-func ReadDB(FileName string) (articles map[string]*PageItems, err error) {
+func ReadDB(articles []string) (articles map[string]*PageItems, err error) {
 	articles = make(map[string]*PageItems)
-	var article string
-	var bufferString string
-	var buffer, bufferTwo []byte
-	_, err = os.Stat(FileName)
-	if os.IsNotExist(err) {
-		return nil, errors.New(FileName + " does not exist")
-	}
-	file, err := os.Open(FileName)
-	fReader := bufio.NewReader(file)
-	for {
-		buffer, _, err = fReader.ReadLine()
-		if err != nil {
-			return nil, err
-		}
-		bufferString = string(buffer)
-		switch {
-		case strings.EqualFold(bufferString[0:2], "* "):
-			article = bufferString[2:] 
-		case strings.EqualFold(bufferString[0:3], "** "):
-			bufferString = bufferString[3:]
-		case strings.EqualFold(bufferString[0:4], "*** "):
-			bufferTwo, _, err = fReader.ReadLine()
-			if err != nil {
-				return nil, err
-			}
-			articles[article] = &PageItems{}
-			articles[article].Sections[bufferString] = string(bufferTwo)
-		}
-	}
+	
 	return articles, nil
 }
