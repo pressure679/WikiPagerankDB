@@ -1,24 +1,30 @@
-/*
-   This is basically just an API for reading a wikipedia dump from https://dumps.wikimedia.org/enwiki/,
-   the search engine/database will be created with elasticsearch or bleve. - apart from go-wikiparse this has the
-   GetSections method.
-    Copyright (C) 2015  Vittus Mikiassen
+ /*
+	 This is basically just an API for reading a wikipedia dump from https://dumps.wikimedia.org/enwiki/,
+	 the search engine/database will be created with elasticsearch or bleve. - apart from go-wikiparse this has the
+	 GetSections method.
+		Copyright (C) 2015  Vittus Mikiassen
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+		This program is free software: you can redistribute it and/or modify
+		it under the terms of the GNU General Public License as published by
+		the Free Software Foundation, either version 3 of the License, or
+		(at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+		This program is distributed in the hope that it will be useful,
+		but WITHOUT ANY WARRANTY; without even the implied warranty of
+		MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+		GNU General Public License for more details.
 
 		You should have received a copy of the GNU General Public License
 		along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 // The Wikipedia articles can be downloaded at https://dumps.wikimedia.org/enwiki/latest/
 // Package main provides ...
+
+// TODO: Big picture from here is to make sorting algorithm for pagerank function, update SqlInsert, then the "installation/CreateDB" part of the program is finished.
+// Then prettify the output of WriteTXT with a CSS just for the sake of it.
+// Then when the program is to utilize the dijkstra's algorithm and have found a path, in the main function, use the pagerank part of the DB to load all articles with a max distance/depth of 7 from the MySQL DB (test it to utilize RAM and/or CPU best, e.g how many articles to load at a time), then discard the neighboring articles from the RAM if they do not have the base article as a neighbor.
+// Then get the top 5 or 10 best pageranking neighboring articles from each article in the path (len(path) / 7 * 3, then 5, then 7 if RAM is clocked), then use WriteTXT function to write the summaries of each article (path and top 5 or 10 pageranking algorithms).
+
 package main
 import (
 	"fmt"
@@ -29,56 +35,63 @@ import (
 	"compress/bzip2"
 	// "strings"
 	"strconv"
-	"regexp"
+	"regejxp"
 	// "sync"
 	"errors"
 	"github.com/dustin/go-wikiparse"
-	// "github.com/Professorq/dijkstra"
+	"github.com/pressure679/dijkstra"
 	//"github.com/alixaxel/pagerank"
 	_ "github.com/go-sql-driver/mysql"
 	"database/sql"
 	// "github.com/Masterminds/squirrel"
 	//"testing"
 )
+
+type Data map[uint8]float64
 type PageItems struct {
-	Sections map[string]string // Sections (Text) from a wiki article
-	NodeID uint64
-	Pagerank [7]float64
+	// Sections, title indicated by key, item is content/text
+	Sections map[string]string
+	
+	// The NodeID, used for dijkstra's algorithm
+	NodeID uint32
+	
+	// This article's pagerank for another article (the other articles has a max depth of 7 indicated by the 2nd map's key, pagerank is indicated by 2nd map's item)
+	Pagerank map[string]Data
+	
+	// links from this article, used to collect them for the MySQL DB, after that the program will use them to utilize the DB for Dijkstra's algorithm and the Pagerank algorithm.
 	Links []string
-	//reftohere []string
-	//pagerank float64
-}
-func main() {
-	// var articles map[string]PageItems
-	// articles = make(map[string]PageItems)
-	// var graph map[string][]string
-	/* TODO:
-		Add functions to read wiki pages, use SqlInsert, an then Dijkstra to load shortetst path when all wiki pages
-		and dijkstra graph is loaded into the mysql database.
-		When nodes are loaded load pagerank of all links within a depth of 7.
-		Load the shortest path from the top 3 of links between each node within a depth of 7.
-		From the shortest path take the path with highest pagerank of all the nodes' links between one another if within a depth
-		of 7, else just the one with highest pagerank. */
-	/* db, err := sql.Open(
-		"mysql",
-		"root:root@tcp(localhost:3311)/sample")
-	if err != nil { panic(err) }
-	defer db.Close() */
-	err := CreateDB()
-	if err != nil { panic(err) }
 }
 
-// use os.Open to make an io.Reader from bzip2.NewReader(os.File) to read wikipedia xml file
+func main() {
+	// TODO: Utilize the functions, get the wikimedia xml dumps and clean the code for bugs.
+	
+	
+	// TODO: add concurrency to each function if needed and also to function calls.
+}
+
+// Read all Bzipped Wikimedia XML files from "articles" dir.
+func GetFilesFromArticlesDir() (files []string, err error) {
+	osFileInfo, err := ioutil.ReadDir("articles")
+	if err != nil { return nil, err }
+	for _, fileInfo := range osFileInfo {
+		if !fileInfo.IsDir() {
+			if fileInfo.Name()[0:5] == "1234" { // wikimedia xml file names
+				files = append(files, fileInfo.Name())
+			}
+		}
+	}
+	return files, nil
+}
+
+// uses os.Open to make an io.Reader from bzip2.NewReader(os.File) to read wikipedia xml file
 func DecompressBZip (file string) (io.Reader, error) {
 	osfile, err := os.Open(file)
-	if err != nil {
-		return nil, err
-	}
+	if err != nil {	return nil, err	}
 	ioreader := bzip2.NewReader(osfile)
 	return ioreader, nil
 }
 
-// Read Wikipedia Articles from a Wikimedia XML dump bzip file, return the Article with titles as map keys and PageItems (Links, Sections and Text) as items - Also add Section "See Also"
+// Reads Wikipedia articles from a Wikimedia XML dump bzip file, return the Article with titles as map keys and PageItems (Links, Sections and Text) as items - Also add Section "See Also"
 func ReadWikiXML(page wikiparse.Page) (articles map[string]PageItems, err error) {
 	articles = make(map[string]PageItems)
 	var tmp PageItems
@@ -92,7 +105,6 @@ func ReadWikiXML(page wikiparse.Page) (articles map[string]PageItems, err error)
 				return nil, err
 			}
 		}
-		// Add links in article to our articles - TODO: update to make it fit with dijkstra.go
 		links := wikiparse.FindLinks(page.Revisions[i].Text)
 		for _, link := range(links) {
 			tmp.Links = append(tmp.Links, link)
@@ -102,7 +114,7 @@ func ReadWikiXML(page wikiparse.Page) (articles map[string]PageItems, err error)
 	return articles, nil
 }
 
-// Get sections from a wikipedia article
+// Gets sections from a wikipedia article
 func GetSections(page, title string, i int) (sections map[string]string, err error) {
 	sections = make(map[string]string)
 	// Make a regexp search object
@@ -117,7 +129,7 @@ func GetSections(page, title string, i int) (sections map[string]string, err err
 	if sections.Text == "" {
 		fmt.Println("page \"", sections.Title, "\" text is \"\"")
 	}
-  */
+	*/
 
 	index := re.FindAllStringIndex(page, -1)
 	if len(index) == 0 {
@@ -136,24 +148,59 @@ func GetSections(page, title string, i int) (sections map[string]string, err err
 	return sections, nil
 }
 
-func SqlInsert(db *sql.DB, articles map[string]PageItems) (err error) {
+// Pageranks articles (map's item) with a given depth/distance (map's key) from a base article which must have a max distance of 7.
+// TODO: Sort the return value by the highest pagerank (2nd map's item) (maybe in main function)
+func Pagerank(articles map[uint8][]string) (pagerank map[string]Data) {
+	graph := pagerank.NewGraph()
+
+	var x uint16 = 0
+
+	// TODO: put this in func main
+	/* numLinksPerLeaf := make(map[uint8][]uint16)
+	for i := 0; i < len(articles); i++ {
+		for _, _ := range(articles[i]) {
+			x++
+		}
+		numLinksPerLeaf[i] = x
+	} */
+
+	for i := 0; i < len(articles); i++ {
+		for key, item := range(articles[i]) {
+			graph.Link(1, key, i)
+		}
+	}
+	
+	x = 0
+	var xx uint16 = 0
+	pagerank = make(map[string]Data)
+	graph.Rank(0.85 /*put damping factor here or just settle with weighing the graph?*/, 0.000001 /*precision*/, func(node uint64, rank float64) {
+		pagerank[articles[x][xx]][x] = rank
+		if xx == len(articles[x]) { x++ }
+		xx++
+	})
+}
+
+// Dijkstra's algorithm, used to find shortest path (if any) between 2 articles.
+func Dijkstra(request dijkstra.Request) (path []string) {
+	return dijkstra.Get(request)
+}
+
+func SqlInsert(db sql.DB, articles map[string]PageItems) (err error) {
 	for title, items := range articles {
-		// sections := make([]string, len(items.Sections))
-		_, err = db.Exec("CREATE TABLE " + title + " (NodeID int, Pagerank_1 float, Pagerank_2 float, Pagerank_3 float, Pagerank_4 float, Pagerank_5 float, Pagerank_6 float, Pagerank_7 float")
-		_, err = db.Exec("INSERT INTO " + title + "(NodeID, Pagerank_1, Pagerank_2, Pagerank_3, Pagerank_4, Pagerank_5, Pagerank_6, Pagerank_7, ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", items.NodeID, items.Pagerank[0], items.Pagerank[1], items.Pagerank[2], items.Pagerank[3], items.Pagerank[4], items.Pagerank[5], items.Pagerank[6])
-		if err != nil { return err }
+		if _, err = *db.Exec("CREATE TABLE " + title + " (NodeID int, Pagerank_1 float, Pagerank_2 float, Pagerank_3 float, Pagerank_4 float, Pagerank_5 float, Pagerank_6 float, Pagerank_7 float"); err != nil { return err }
+		if _, err = *db.Exec("INSERT INTO " + title + "(NodeID, Pagerank_1, Pagerank_2, Pagerank_3, Pagerank_4, Pagerank_5, Pagerank_6, Pagerank_7, ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", items.NodeID, items.Pagerank[0], items.Pagerank[1], items.Pagerank[2], items.Pagerank[3], items.Pagerank[4], items.Pagerank[5], items.Pagerank[6]); err != nil { return err }
+		
 		for sectionTitle, sectionBody := range items.Sections {
-			_, err = db.Exec("ALTER TABLE " + title + " ADD " + sectionTitle + " text")
-			if err != nil { return err }
-			_, err = db.Exec("INSERT INTO " + title + "(" + sectionTitle + ") VALUES (?)", sectionBody)
-			if err != nil { return err }
+			if _, err = *db.Exec("ALTER TABLE " + title + " ADD " + sectionTitle + " text"); err != nil { return err }
+			if _, err = *db.Exec("INSERT INTO " + title + "(" + sectionTitle + ") VALUES (?)", sectionBody); err != nil { return err }
 		}
 	}
 	return nil
 }
-func SqlSelect(db sql.DB, table []string) (articles map[string]PageItems, err error) {
+
+func SqlSelect(db sql.DB, tables []string) (articles map[string]PageItems, err error) {
 	var tmp PageItems
-	for _, title := range table {
+	for _, title := range tables {
 		rows, err := db.Query("SELECT * FROM " + title);
 		if err != nil { return nil, err }
 		columns, err := rows.Columns()
@@ -228,120 +275,31 @@ func SqlSelect(db sql.DB, table []string) (articles map[string]PageItems, err er
 	return articles, nil
 }
 
-// TODO: Comment SqlUpdate and SqlDelete out or update them.
-/* func SqlUpdate(table, column string, value map[string]interface{}) (query string, err error) {
-	query, _, err = squirrel.Update(table).
-    Set(column, value).
-		ToSql()
-	if err != nil { return "", err }
-	return query, nil
-}
-func SqlDelete(table, column, value string) (query string, err error) {
-	query, _, err = squirrel.Delete(value).
-		From(table).
-		ToSql()
-	if err != nil { return "", err }
-	return query, nil
-} */
-
-// Create database with index of the name of first and last article of each wikipedia file.
-// DONE
-func CreateDB() (err error) {
-	// var articleSections []string
-	db, err := sql.Open("mysql", "naamik:glvimia7@tcp(localhost:3306)/wikidb")
-	if err != nil { return err }
-	files, err := ioutil.ReadDir("D:/")
-	if err != nil { return err }
-	// var nodeID int
-	var titles []string
-	for _, file := range files {
-		absFile, err := os.Open(file.Name())
-		if err != nil { return err }
-		/* if strings.EqualFold(file.Name(), "enwiki-latest-abstract.xml") {
-		}
-		if strings.EqualFold(file.Name(), "enwiki-latest-pagelinks.sql.gz") {
-
-		} */
-		// wikijsonin, err := DecompressBZip(items.Name())
-		// if err != nil { return err }
-		if file.Name() == "enwiki-latest-abstract.xml" {
-			articles := make(map[string]PageItems)
-			// parser, err := wikiparse.NewParser(wikijsonin)
-			// if err != nil { return err }
-			parser, err := wikiparse.NewParser(absFile)
-			if err != nil { return err }
-			for err == nil {
-				page, err := parser.Next()
-				if err != nil { return err }
-				// Make ReadWikiXML add an unique ID to each page (Node ID for Dijkstra's algorithm)..
-				titles = append(titles, page.Title)
-				articles, err = ReadWikiXML(*page)
-				if err != nil { return err }
-				if err = SqlInsert(db, articles); err != nil { return err }
-			}
-			/* for title, _ := range(articles) {
-			for sectionName, sectionBody := range(articles[title].Sections) {
-				// TODO: make an interface for SqlInsert to automatically detect data types to insert.
-				query, err := SqlInsert(title, sectionName, sectionBody)
-				if err != nil { return err }
-			}
-		} */
-		} else { continue }
-	}
-	// if err = writeTitles(titles); err != nil { return err }
-	return nil
-}
-
-// Read the index of all wikipedia articles into a map with key as article file name and item as first and last article name
-/* func ReadDB(articleTitles []string) (articles map[string]PageItems, err error) {
-	connection, err := sql.Open("mysql", "naamik:glvimia7@tcp(localhost:3306)/wikidb", eventReceiver)
-	if err != nil { panic(err) }
-	session := connection.NewSession(eventReceiver)
-	for _, title := range articleTitles {
-		tmp := articles[title]
-		tmp, err = sqlSelect(session, title)
-		if err != nil { return nil, err }
-		articles[title] = tmp
-	}
-	return articles, nil
-} */
-
-// Writing the articles items in emacs-org format (to write the path from article A to B and their top pageranking links in a presentable format)
-func WriteTXT(db io.Writer, articles map[string]PageItems) {
-	fWriter := bufio.NewWriter(db)
+// TODO: optimize the emacs-org format text written in WriteTXT function to be pretty (just make the text pretty for when the system-call to format the org-txt to html format, maybe just make a CSS for it).
+// Also when the articles, separately, has to be written, then make it like "1 - <article title>", "2 - <article title>" with the number relatively to the path number from article A to B. The neighboring articles to the base articles are written in the folders with folder name given by the path number. The neighboring article's name are numbered by their distance then their pagerank and then their title.
+// Writes the articles items in emacs-org format (to write the path from article A to B and their top pageranking links in a presentable format)
+func WriteTXT(articles map[string]PageItems) (err error) {
+	// fWriter := bufio.NewWriter(ioWriter)
 	for articleName, _ := range(articles) {
-		fmt.Fprintln(fWriter, "* " + articleName)
-		fmt.Fprintln(fWriter, "** Sections")
+		file, err := os.Create(articleName)
+		defer file.Close()
+		file.WriteString("* " + articleName)
+		file.WriteString("** Sections")
 		for sectionName, sectionText := range(articles[articleName].Sections) {
-			fmt.Fprintln(fWriter, "*** " + sectionName)
-			fmt.Fprintln(fWriter, "    " + sectionText)
+			file.WriteString("*** " + sectionName)
+			file.WriteString("    " + sectionText)
 		}
 	}
-	fWriter.Flush()
 }
 
-/* func Dijkstra() (path map[int]string) {
-	
-} */
+// TODO: make a basic chatbot which uses Eliza's principle of chatting, the basic outrule for chatting uses Bloom's Taxonomical levels to present data/chat with a user.
+// The packages to be used here are word2sentence etc., elasticsearch, and it should utilize the information written to a file in emacs-org format/html-format.
+// From here the chatbot is to be written, just to make it J.A.R.V.I.S-like. the chatbot will use ELIZA like chat functionality, e.g explain how one article relates to another by using Bloom's Taxonomical levels (here word2sentence etc. and Elasticsearch will be used).
+// The chatbot will load the summaries of the written (from WriteTXT) articles that are in the path of article A, B, C... and their top 5 or 10 pageranking articles.
+// The chatbot may start with "Hi, which topics would you like me to chat with you about?". And the chatbot may want to only use a max of 4-7 new words in each message to not strain the short-term memory. It's functionality will be different than the product of WriteTXT function; it will connect the paths between the topics, but the pagerank functionality will work somehow indifferable; IMPORTANT: it will sum up pageranks if a neighboring article has 2 base articles as neighbors. (should maybe also be used for the WriteTXT function).
+// Create a neural network for the chatbot with a light prediction analysis algorithm (prediction algorithm trained by user's behaviour) to make it smarter.. Maybe the neural network is not needed since Dijkstra and Pagerank makes up for it; the shortest part and the top pageranking path. Maybe add a neural network to find the path from shortest path and top pageranking path to make it better to chat with humans rather than machines(?).
+// Here I may also add a xml dump file of articles from HowStuffWorks if it provides such to add a functinality to the chatbot to answer "how" questions.
 
-/* func loadNodes() (graph map[int]dijkstra.Vertex, err error) {
-	db, err := sql.Open(
-		"mysql",
-		"root:root@tcp(localhost:3311)/sample")
-	if err != nil { return err }
-	rows, err := db.Query("SELECT * FROM "
-	columns, err := 
-	}
-} */
+// TODO: if the chatbot functionality works well; hook it up to 1 or more irc channels.
 
-/* func writeTitles(titles []string) (err error) {
-
-} */
-
-// Do I need this??
-/* func sqlDelete(session *dbr.Session, row, column, value string) (err error) {
-	if _, err := session.DeleteFrom(row).
-		Where(dbr.Eq(column, value)).
-		Exec(); err != nil { return err }
-	return nil
-} */
+// TODO: make a GUI for Android for the chatbot functionality
