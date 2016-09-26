@@ -33,9 +33,9 @@ import (
 	"io/ioutil"
 	"bufio"
 	"compress/bzip2"
-	// "strings"
+	"strings"
 	"strconv"
-	"regejxp"
+	"regexp"
 	// "sync"
 	"errors"
 	"github.com/dustin/go-wikiparse"
@@ -43,7 +43,7 @@ import (
 	//"github.com/alixaxel/pagerank"
 	_ "github.com/go-sql-driver/mysql"
 	"database/sql"
-	// "github.com/Masterminds/squirrel"
+	"github.com/boltdb/bolt"
 	//"testing"
 )
 
@@ -65,7 +65,6 @@ type PageItems struct {
 func main() {
 	// TODO: Utilize the functions, get the wikimedia xml dumps and clean the code for bugs.
 	
-	
 	// TODO: add concurrency to each function if needed and also to function calls.
 }
 
@@ -75,9 +74,7 @@ func GetFilesFromArticlesDir() (files []string, err error) {
 	if err != nil { return nil, err }
 	for _, fileInfo := range osFileInfo {
 		if !fileInfo.IsDir() {
-			if fileInfo.Name()[0:5] == "1234" { // wikimedia xml file names
-				files = append(files, fileInfo.Name())
-			}
+			files = append(files, fileInfo.Name())
 		}
 	}
 	return files, nil
@@ -155,15 +152,6 @@ func Pagerank(articles map[uint8][]string) (pagerank map[string]Data) {
 
 	var x uint16 = 0
 
-	// TODO: put this in func main
-	/* numLinksPerLeaf := make(map[uint8][]uint16)
-	for i := 0; i < len(articles); i++ {
-		for _, _ := range(articles[i]) {
-			x++
-		}
-		numLinksPerLeaf[i] = x
-	} */
-
 	for i := 0; i < len(articles); i++ {
 		for key, item := range(articles[i]) {
 			graph.Link(1, key, i)
@@ -175,104 +163,85 @@ func Pagerank(articles map[uint8][]string) (pagerank map[string]Data) {
 	pagerank = make(map[string]Data)
 	graph.Rank(0.85 /*put damping factor here or just settle with weighing the graph?*/, 0.000001 /*precision*/, func(node uint64, rank float64) {
 		pagerank[articles[x][xx]][x] = rank
-		if xx == len(articles[x]) { x++ }
+		if xx == len(articles[x]) {
+			x++
+			xx = 0
+		}
 		xx++
 	})
+}
+
+func (Page PageItems) BoltCreate(file string) (err error) {
+	db, err := bolt.Open("articles/" + file, 0666, nil)
+	if err != nil { return err }
+	return nil
+}
+
+// Insert one wikimedia dump file at a time, the db file is named "[a-z]-[az]*", the regexp's are the letter of the 1st and last article in the dump file (get that in the main func)
+func (Page PageItems) BoltInsert(articles map[string]PageItems) (err error) {
+	var files []string
+	osFileInfo, err := ioutil.ReadDir("articles")
+	if err != nil { return err }
+	for _, fileInfo := range osFileInfo {
+		if !fileInfo.IsDir() {
+			files = append(files, fileInfo.Name())
+		}
+	}
+	for key, _ := range articles {
+		b, err := tx.CreateBucket([]byte(key))
+		if err != nil { return err }
+		for sectionKey, sectionText := range articles[key].Sections {
+			if err := b.Put([]byte(sectionKey), []byte(sectionText)); err != nil { return err }
+		}
+		for prKey, prData := range items.Pagerank {
+			for depth, pagerank := range prData {
+				if err := b.Put([]byte("pr_target-" + prKey), []byte(strconv.Itoa(depth) + "-" + strconv.Itoa(pagerank))); err != nil { return err }
+			}
+		}
+		for _, link := range items.Links {
+			if err := b.Put([]byte("Links"), []byte(items.Links)); err != nil { return err }
+		}
+		if err := b.Put([]byte("NodeID"), []byte(items.NodeID)); err != nil { return err }
+	}
+	return nil
+}
+
+func (Page PageItems) BoltGet(tx *bolt.Tx, articles, keys []string) (articlesData map[string]PageItems) {
+	var tmp PageItems
+	articlesData = make(map[string]PageItems)
+	var counter uint = -1
+	for _, article := range articles {
+		for _, value := range keys {
+			if strings.EqualFold(key, "NodeID") {
+				tmp.NodeID = strconv.Atoi(string(value))
+			} else if strings.Contains(key, "pr_target-") {
+				tmp = PageItems{
+					Pagerank: map[string]Data{
+						article: map[uint8]float64{},
+					},
+				}
+				pr_data := strings.Split(key, "-")
+				tmp.Pagerank[article] = Data{}
+				// TODO: Add articles, check how the db delegates keys and values of pageranks.
+				
+			}
+			value := tx.Bucket([]byte(article)).Get([]byte(key))
+		}
+	}
+	return value
+}
+func (Page PageItems) BoltUpdate(tx *bolt.Tx, article map[string]PageItems) (err error) {
+	for key, items := range article {
+		b, err := tx.Bucket([]byte(key))
+		for sectionKey, sectionText := range items.Sections {
+			if err := b.Put([]byte(sectionKey), []byte(sectionText)); err != nil { return err }
+		}
+	}
 }
 
 // Dijkstra's algorithm, used to find shortest path (if any) between 2 articles.
 func Dijkstra(request dijkstra.Request) (path []string) {
 	return dijkstra.Get(request)
-}
-
-func SqlInsert(db sql.DB, articles map[string]PageItems) (err error) {
-	for title, items := range articles {
-		if _, err = *db.Exec("CREATE TABLE " + title + " (NodeID int, Pagerank_1 float, Pagerank_2 float, Pagerank_3 float, Pagerank_4 float, Pagerank_5 float, Pagerank_6 float, Pagerank_7 float"); err != nil { return err }
-		if _, err = *db.Exec("INSERT INTO " + title + "(NodeID, Pagerank_1, Pagerank_2, Pagerank_3, Pagerank_4, Pagerank_5, Pagerank_6, Pagerank_7, ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", items.NodeID, items.Pagerank[0], items.Pagerank[1], items.Pagerank[2], items.Pagerank[3], items.Pagerank[4], items.Pagerank[5], items.Pagerank[6]); err != nil { return err }
-		
-		for sectionTitle, sectionBody := range items.Sections {
-			if _, err = *db.Exec("ALTER TABLE " + title + " ADD " + sectionTitle + " text"); err != nil { return err }
-			if _, err = *db.Exec("INSERT INTO " + title + "(" + sectionTitle + ") VALUES (?)", sectionBody); err != nil { return err }
-		}
-	}
-	return nil
-}
-
-func SqlSelect(db sql.DB, tables []string) (articles map[string]PageItems, err error) {
-	var tmp PageItems
-	for _, title := range tables {
-		rows, err := db.Query("SELECT * FROM " + title);
-		if err != nil { return nil, err }
-		columns, err := rows.Columns()
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for rows.Next() {
-			for i, _ := range columns {
-				valuePtrs[i] = &values[i]
-			}
-			rows.Scan(valuePtrs...)
-			
-			for i, _ := range columns {
-				tmp = articles[title]
-				switch columns[i] {
-				case "NodeID":
-					if values[i] != nil {
-						tmp.NodeID, err = strconv.ParseUint(values[i].(string), 10, 32)
-						if err != nil { return nil, err }
-					}
-				case "Pagerank_1":
-					if values[i] != nil {
-						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
-						tmp.Pagerank[0], err = strconv.ParseFloat(values[i].(string), 32)
-						if err != nil { return nil, err }
-					}
-				case "Pagerank_2":
-					if values[i] != nil {
-						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
-						tmp.Pagerank[1], err = strconv.ParseFloat(values[i].(string), 32)
-						if err != nil { return nil, err }
-					}
-				case "Pagerank_3":
-					if values[i] != nil {
-						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
-						tmp.Pagerank[2], err = strconv.ParseFloat(values[i].(string), 32)
-						if err != nil { return nil, err }
-					}
-				case "Pagerank_4":
-					if values[i] != nil {
-						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
-						tmp.Pagerank[3], err = strconv.ParseFloat(values[i].(string), 32)
-						if err != nil { return nil, err }
-					}
-				case "Pagerank_5":
-					if values[i] != nil {
-						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
-						tmp.Pagerank[4], err = strconv.ParseFloat(values[i].(string), 32)
-						if err != nil { return nil, err }
-					}
-				case "Pagerank_6":
-					if values[i] != nil {
-						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
-						tmp.Pagerank[5], err = strconv.ParseFloat(values[i].(string), 32)
-						if err != nil { return nil, err }
-					}
-				case "Pagerank_7":
-					if values[i] != nil {
-						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
-						tmp.Pagerank[6], err = strconv.ParseFloat(values[i].(string), 32)
-						if err != nil { return nil, err }
-					}
-				default:
-					if values[i] != nil {
-						fmt.Println("default: columns[i]:\t", columns[i], values[i])
-						tmp.Sections[columns[i]] = values[i].(string)
-					}
-				}
-				articles[title] = tmp
-			}
-		}
-	}
-	return articles, nil
 }
 
 // TODO: optimize the emacs-org format text written in WriteTXT function to be pretty (just make the text pretty for when the system-call to format the org-txt to html format, maybe just make a CSS for it).
