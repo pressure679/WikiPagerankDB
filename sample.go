@@ -197,16 +197,17 @@ func (Page PageItems) BoltInsert(articles map[string]PageItems) (err error) {
 		for sectionKey, sectionText := range articles[key].Sections {
 			if err := b.Put([]byte(sectionKey), []byte(sectionText)); err != nil { return err }
 		}
-		// Puts the pagerank into the bucket, so the //TODO: Make comments
-		for prKey, prData := range items.Pagerank {
+		// Puts the pagerank into the bucket.
+		// Format is: bucket name: pr_target-<article>, bucket content: <depth>-<pagerank>
+		for prKey, prData := range articles[key].Pagerank {
 			for depth, pagerank := range prData {
 				if err := b.Put([]byte("pr_target-" + prKey), []byte(strconv.Itoa(depth) + "-" + strconv.Itoa(pagerank))); err != nil { return err }
 			}
 		}
-		for _, link := range items.Links {
-			if err := b.Put([]byte("Links"), []byte(items.Links)); err != nil { return err }
+		for _, link := range articles[key].Links {
+			if err := b.Put([]byte("Links"), []byte(link)); err != nil { return err }
 		}
-		if err := b.Put([]byte("NodeID"), []byte(items.NodeID)); err != nil { return err }
+		if err := b.Put([]byte("NodeID"), []byte(articles[key].NodeID)); err != nil { return err }
 	}
 	return nil
 }
@@ -218,9 +219,10 @@ func (Page PageItems) BoltGet(tx *bolt.Tx, articles, keys []string) (articlesDat
 	// range over articles requested and get their neighboring articles with a max depth of 7.
 	for _, article := range articles {
 		// Get the value (the strings in the "keys" string array); the Data keys, e.g Pagerank, NodeID, article name, sections etc..
-		for _, value := range keys {
+		for _, key := range keys {
 			// Following if/else if should really be a switch, but we check if the key's value is NodeID, Pagerank and so forth.
 			// Check BoltInsert to see how the keys are made.
+			value := tx.Bucket([]byte(article)).Get([]byte(key))
 			if strings.EqualFold(key, "NodeID") {
 				tmp.NodeID = strconv.Atoi(string(value))
 			} else if strings.Contains(key, "pr_target-") {
@@ -229,15 +231,15 @@ func (Page PageItems) BoltGet(tx *bolt.Tx, articles, keys []string) (articlesDat
 						article: map[uint8]float64{},
 					},
 				}
-				pr_data := strings.Split(value, "-")
+				pr_data := strings.Split(articles[key].Pagerank, "-")
 				tmp.Pagerank[article] = Data{}
-				// TODO: Add articles, check how the db delegates keys and values of pageranks.
 				tmp.Pagerank[article].Data = make(map[uint8]float64)
+				tmp.Pagerank[article].Data[strings.Atoi(pr_data[0])] = strings.Atoi(pr_data[1])
 			}
-			value := tx.Bucket([]byte(article)).Get([]byte(key))
+				articles[key] = tmp
 		}
 	}
-	return value
+	return articles
 }
 func (Page PageItems) BoltUpdate(tx *bolt.Tx, article map[string]PageItems) (err error) {
 	for key, items := range article {
