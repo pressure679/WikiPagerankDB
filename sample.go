@@ -27,51 +27,97 @@
 
 package main
 import (
-	"fmt"
-	"os"
 	"io"
 	"io/ioutil"
-	"bufio"
 	"compress/bzip2"
+	"os"
+	"log"
 	"strings"
 	"strconv"
 	"regexp"
-	// "sync"
 	"errors"
 	"github.com/dustin/go-wikiparse"
-	"github.com/pressure679/dijkstra"
-	//"github.com/alixaxel/pagerank"
-	_ "github.com/go-sql-driver/mysql"
-	"database/sql"
+	"github.com/Professorq/dijkstra"
 	"github.com/boltdb/bolt"
+	// "sync"
+	//"github.com/alixaxel/pagerank"
+	// _ "github.com/go-sql-driver/mysql"
+	// "database/sql"
 	//"testing"
 )
 
 // Data is pagerank, key is depth from base article, item is pagerank.
-type Data map[uint8]float64
+type Data map[string]float64
 type PageItems struct {
 	// Sections, title indicated by key, item is content/text
 	Sections map[string]string
 	
 	// The NodeID, used for dijkstra's algorithm
-	NodeID uint32
+	NodeID uint
 	
 	// This article's pagerank for another article (the other articles has a max depth of 7 indicated by the 2nd map's key, pagerank is indicated by 2nd map's item)
-	Pagerank map[string]Data
+	Pagerank map[uint8]Data
 	
 	// links from this article, used to collect them for the MySQL DB, after that the program will use them to utilize the DB for Dijkstra's algorithm and the Pagerank algorithm.
 	Links []string
 }
 
 func main() {
-	// TODO: Utilize the functions, get the wikimedia xml dumps and clean the code for bugs.
+	// TODO: mod the pagerank function. We want to get pagerank of neighboring articles from a base article.
+	// TODO: How to Pagerank? - We have to have all articles to find their leaves with a max depth of 7; We have to either pagerank them before, after or during the creation of the bolt db files.
+	// Use the A* algorithm inside the pagerank function. Inside the A*'s method use the BoltGet function to get neighbors of current article, and so forth. When all neighboring articles are gotten we pagerank them using alixaxel's Pagerank package.
+	// The neighbors have a max depth of 7, so 7^7*x articles, so maybe 5.000 articles are in RAM at once making, so 5.000 * title_length * 256 should make the size, so about 500MB RAM for each dump file to pagerank them.
 	
+	var articles map[string]PageItems
+	articles = make(map[string]PageItems)
+	var fileName [2]string// 1st and last article in each xml dump - to create bolt db files.
+	dumpFiles, err := GetFilesFromArticlesDir()
+	if err != nil { panic(err) }
+	// Put pagerank in a separate bolt db file, maybe together with the graph of wikipedia for Dijkstra purposes. - struggle with how building a db is done with BoltDB or use MySQL.
+	var NodeIDCnt PageItems
+	// Add a goroutine here running for concurrency
+	for cnt, file := range dumpFiles {
+		if cnt == 0 {
+			fileName[0] = file
+		} else if cnt == len(dumpFiles) {
+			fileName[1] = file
+			if err = BoltCreate(fileName[0] + fileName[1]); err != nil { panic(err) }
+		}
+		// All articles in a dump file is read here, approx. 250mb for each dump, approx. 25 dump files.
+		ioReader, err := DecompressBZip(file)
+		if err != nil { panic(err) }
+		wikiParser, err :=  wikiparse.NewParser(ioReader)
+		if err != nil { panic(err) }
+		for err == nil {
+			page, err0 := wikiParser.Next()
+			if err0 != nil { panic(err0) }
+			articles, err0 := ReadWikiXML(*page)
+			if err0 != nil { panic(err0) }
+		}
+		if err != nil { panic(err) }
+		// TODO: Bolt
+		articlesDB, err := bolt.Open("/home/naamik/go/wikiproj/" + fileName[0] + "-" + fileName[1] + ".boltdb", 0666, nil)
+		if err != nil { log.Fatal(err) }
+		if err := articlesDB.Update(func(tx *bolt.Tx) error {
+			
+		}); err != nil { log.Fatal(err) }
+		// Name is not defined, we have to assign NodeIDCnt to all articles; range over articles and assign NodeIDCnt, either while reading the articles in ReadWikiXML or in a for method.
+		NodeIDCnt.NodeID = 0
+		for key, _ := range articles {
+			NodeIDCnt.NodeID++
+			articles[key].NodeID = NodeIDCnt.NodeID
+		}
+		graphDB, err := bolt.Open("/home/naamik/go/wikiproj/" + "graph-" + fileName[0] + "-" + fileName[1] + ".boltdb", 0666, nil)
+		if err := graphDB.Update(func(tx *bolt.Tx) error {
+
+		}); err != nil { log.Fatal(err) }
+	}
 	// TODO: add concurrency to each function if needed and also to function calls.
 }
 
-// Read all Bzipped Wikimedia XML files from "articles" dir.
+// Read all names of Bzipped Wikimedia XML files from "articles" dir.
 func GetFilesFromArticlesDir() (files []string, err error) {
-	osFileInfo, err := ioutil.ReadDir("articles")
+	osFileInfo, err := ioutil.ReadDir("dump")
 	if err != nil { return nil, err }
 	for _, fileInfo := range osFileInfo {
 		if !fileInfo.IsDir() {
@@ -80,7 +126,6 @@ func GetFilesFromArticlesDir() (files []string, err error) {
 	}
 	return files, nil
 }
-
 // uses os.Open to make an io.Reader from bzip2.NewReader(os.File) to read wikipedia xml file
 func DecompressBZip (file string) (io.Reader, error) {
 	osfile, err := os.Open(file)
@@ -88,47 +133,44 @@ func DecompressBZip (file string) (io.Reader, error) {
 	ioreader := bzip2.NewReader(osfile)
 	return ioreader, nil
 }
-
 // Reads Wikipedia articles from a Wikimedia XML dump bzip file, return the Article with titles as map keys and PageItems (Links, Sections and Text) as items - Also add Section "See Also"
-func ReadWikiXML(page wikiparse.Page) (articles map[string]PageItems, err error) {
-	articles = make(map[string]PageItems)
+func ReadWikiXML(page wikiparse.Page) (article map[string]PageItems, err error) {
+	article = make(map[string]PageItems)
 	var tmp PageItems
 	for i := 0; i < len(page.Revisions); i++ {
-		tmp = articles[page.Title]
+		tmp = article[page.Title]
 		// if text is not nil then add to articles text and sections to articles 
 		if page.Revisions[i].Text != "" {
 			// tmp[page.Title].Sections = make(map[string]string)
-			tmp.Sections, err = GetSections(page.Revisions[i].Text, page.Title, i)
+			tmp.Sections, err = GetSections(page.Revisions[i].Text, page.Title)
 			if err != nil {
 				return nil, err
 			}
 		}
-		links := wikiparse.FindLinks(page.Revisions[i].Text)
-		for _, link := range(links) {
-			tmp.Links = append(tmp.Links, link)
-		}
-		articles[page.Title] = tmp
+		article[page.Title] = tmp
 	}
-	return articles, nil
+	return article, nil
 }
-
-// Gets sections from a wikipedia article
-func GetSections(page, title string, i int) (sections map[string]string, err error) {
+// Gets links
+func GetLinks (page wikiparse.Page) (links []string, err error) {
+	for i := 0; i < len(page.Revisions); i++ {
+		if page.Revisions[i].Text != "" {
+			if err != nil {
+				return nil, err
+			}
+			links = wikiparse.FindLinks(page.Revisions[i].Text)
+		}
+	}
+	return links, nil
+}
+// Gets sections from a wikipedia article, page is article content, title is article title
+func GetSections(page, title string) (sections map[string]string, err error) {
 	sections = make(map[string]string)
-	// Make a regexp search object
+	// Make a regexp search object for section titles
 	re, err := regexp.Compile("[=]{2,5}.{1,50}[=]{2,5}")
 	if err != nil {
 		return nil, err
 	}
-
-	// Check if article has a text
-	// Debugging purposes
-	/*
-	if sections.Text == "" {
-		fmt.Println("page \"", sections.Title, "\" text is \"\"")
-	}
-	*/
-
 	index := re.FindAllStringIndex(page, -1)
 	if len(index) == 0 {
 		return nil, errors.New("page's index is 0")
@@ -145,77 +187,26 @@ func GetSections(page, title string, i int) (sections map[string]string, err err
 	}
 	return sections, nil
 }
-
-// Pageranks articles (map's item) with a given depth/distance (map's key) from a base article which must have a max distance of 7.
-// TODO: Sort the return value by the highest pagerank (2nd map's item) (maybe in main function)
-func Pagerank(articles map[uint8][]string) (pagerank map[string]Data) {
-	graph := pagerank.NewGraph()
-
-	var x uint16 = 0
-
-	for i := 0; i < len(articles); i++ {
-		for key, item := range(articles[i]) {
-			graph.Link(1, key, i)
-		}
-	}
-	
-	x = 0
-	var xx uint16 = 0
-	pagerank = make(map[string]Data)
-	graph.Rank(0.85 /*put damping factor here or just settle with weighing the graph?*/, 0.000001 /*precision*/, func(node uint64, rank float64) {
-		pagerank[articles[x][xx]][x] = rank
-		if xx == len(articles[x]) {
-			x++
-			xx = 0
-		}
-		xx++
-	})
-}
-
-func (Page PageItems) BoltCreate(file string) (err error) {
+func BoltCreate(file string) (err error) {
 	db, err := bolt.Open("articles/" + file, 0666, nil)
 	if err != nil { return err }
 	return nil
 }
-
 // Insert one wikimedia dump file at a time, the db file is named "[a-z]-[az]*", the regexp's are the letter of the 1st and last article in the dump file (get that in the main func)
-func (Page PageItems) BoltInsert(articles map[string]PageItems) (err error) {
-	// range over files created by BoltCreate (the names are named by the range of articles they contain), then insert the articles obtained from ReadWikiXML, articles items are got by GetSections and PageRank functions).
-	var files []string
-	osFileInfo, err := ioutil.ReadDir("articles")
-	if err != nil { return err }
-	// range over wikipedia 
-	for _, fileInfo := range osFileInfo {
-		if !fileInfo.IsDir() {
-			files = append(files, fileInfo.Name())
-		}
-	}
+func BoltInsertArticles(tx *bolt.Tx, articles map[string]PageItems) (err error) {
 	for key, _ := range articles {
 		b, err := tx.CreateBucket([]byte(key))
 		if err != nil { return err }
-			// Puts the name of the articles sections and section content into the bolt bucket, so the TX's bucket name is the article name, and TX's bucket content's key is the article's sections, pagerank, links and so forth (see type article struct for full content).
+		// Puts the name of the articles sections and section content into the bolt bucket, so the TX's bucket name is the article name, and TX's bucket content's key is the article's sections, pagerank, links and so forth (see type article struct for full content).
 		for sectionKey, sectionText := range articles[key].Sections {
 			if err := b.Put([]byte(sectionKey), []byte(sectionText)); err != nil { return err }
 		}
-		// Puts the pagerank into the bucket.
-		// Format is: bucket name: pr_target-<article>, bucket content: <depth>-<pagerank>
-		for prKey, prData := range articles[key].Pagerank {
-			for depth, pagerank := range prData {
-				if err := b.Put([]byte("pr_target-" + prKey), []byte(strconv.Itoa(depth) + "-" + strconv.Itoa(pagerank))); err != nil { return err }
-			}
-		}
-		for _, link := range articles[key].Links {
-			if err := b.Put([]byte("Links"), []byte(link)); err != nil { return err }
-		}
-		if err := b.Put([]byte("NodeID"), []byte(articles[key].NodeID)); err != nil { return err }
 	}
 	return nil
 }
-
-func (Page PageItems) BoltGet(tx *bolt.Tx, articles, keys []string) (articlesData map[string]PageItems) {
+func BoltGet(tx *bolt.Tx, articles, keys []string) (articlesData map[string]PageItems, err error) {
 	var tmp PageItems
 	articlesData = make(map[string]PageItems)
-	var counter uint = -1
 	// range over articles requested and get their neighboring articles with a max depth of 7.
 	for _, article := range articles {
 		// Get the value (the strings in the "keys" string array); the Data keys, e.g Pagerank, NodeID, article name, sections etc..
@@ -223,34 +214,115 @@ func (Page PageItems) BoltGet(tx *bolt.Tx, articles, keys []string) (articlesDat
 			// Following if/else if should really be a switch, but we check if the key's value is NodeID, Pagerank and so forth.
 			// Check BoltInsert to see how the keys are made.
 			value := tx.Bucket([]byte(article)).Get([]byte(key))
-			if strings.EqualFold(key, "NodeID") {
-				tmp.NodeID = strconv.Atoi(string(value))
-			} else if strings.Contains(key, "pr_target-") {
+			switch {
+			case strings.EqualFold(key, "NodeID"):
+				tmp.NodeID, err = strconv.Atoi(string(value))
+				if err != nil { return nil, err }
+			case strings.EqualFold(key[0:10], "pr_target-"):
 				tmp = PageItems{
-					Pagerank: map[string]Data{
-						article: map[uint8]float64{},
+					Pagerank: map[uint8]Data{
+						Article: map[string]float64{},
 					},
 				}
-				pr_data := strings.Split(articles[key].Pagerank, "-")
+				pr_data := strings.Split(string(value), "-")
 				tmp.Pagerank[article] = Data{}
 				tmp.Pagerank[article].Data = make(map[uint8]float64)
 				tmp.Pagerank[article].Data[strings.Atoi(pr_data[0])] = strings.Atoi(pr_data[1])
+			case strings.EqualFold(key, "Links"):
+				for _, item := range articles[key].Links {
+					tmp.Links = append(tmp.Links, strconv.Itoa(item))
+				}
+			default: // If key contains a section name.
+				for sectionName, sectionText := range tmp.Sections {
+					tmp.Sections
+				}
 			}
-				articles[key] = tmp
+			articles[key] = tmp
 		}
 	}
 	return articles
 }
-func (Page PageItems) BoltUpdate(tx *bolt.Tx, article map[string]PageItems) (err error) {
-	for key, items := range article {
+// Graphs Wikipedia and gives the articles a NodeID number. Offset of NodeID is 1.
+func BoltInsertNodeID(tx *bolt.Tx, articles map[string]PageItems) (err error) {
+	for key, _ := range articles {
+		for num, link := range articles[key].Links {
+			links = links + link
+			if num < len(articles[key].Links) { links = links + "-" }
+		}
 		b, err := tx.Bucket([]byte(key))
-		for sectionKey, sectionText := range items.Sections {
-			if err := b.Put([]byte(sectionKey), []byte(sectionText)); err != nil { return err }
+		if err := b.Put([]byte("Links"), []byte(links)); err != nil { return err }
+		if err := b.Put([]byte("NodeID"), []byte(articles[key].NodeID)); err != nil { return err }
+	}
+}
+// Gives articles their pageranks for neighbors with a max distance of 7.
+func Pagerank(articles map[uint8][]string) (pagerank map[string]Data) {
+	graph := pagerank.NewGraph()
+	var distance uint8
+	for distance = 0; distance < len(articles); i++ {
+		for _, article := range(articles[distance]) {
+			graph.Link(1, article, i)
+		}
+	}
+	var absArticle uint16 = 0
+	pagerank = make(map[string]Data)
+	graph.Rank(0.85 /*put damping factor here or just settle with weighing the graph?*/, 0.000001 /*precision*/, func(node uint64, rank float64) {
+		pagerank[articles[distance][absArticle]][distance] = rank
+		absArticle++
+		if absArticle == len(articles[distance]) {
+			distance++
+			absArticle = 0
+		}
+	})
+}
+func BoltInsertPagerank(tx *bolt.Tx, articles map[string]PageItems) (err error) {
+	var links string
+	// Format is: bucket name: pr_target-<article>, bucket content: <depth>-<pagerank>
+	for key, _ := range articles {
+		for prDepth, _ := range articles[key].Pagerank {
+			b, err := tx.Bucket([]byte(key))
+			if err != nil { return err }
+			for prArticle, pagerank := range articles[key].Pagerank[prDepth] {
+				if err := b.Put([]byte("pr_target-" + prArticle), []byte(strconv.Itoa(prDepth) + "-" + strconv.Itoa(pagerank))); err != nil { return err }
+			}
 		}
 	}
 }
-
-// Dijkstra's algorithm, used to find shortest path (if any) between 2 articles.
+func BoltUpdate(tx *bolt.Tx, articles map[string]PageItems) (err error) {
+	for key, _ := range articles {
+		b, err := tx.Bucket([]byte(key))
+		if articles[key].Sections != nil {
+			for sectionKey, sectionText := range articles[key].Sections {
+				if err := b.Put(
+					[]byte(sectionKey),
+					[]byte(sectionText));
+				err != nil { return err }
+			}
+		}
+		if articles[key].Pagerank != nil {
+			for prDepth, _ := range articles[key].Pagerank {
+				for prArticle, pagerank = range articles[key].Pagerank[prDepth] {
+					if err := b.Put(
+						[]byte("pr_target-" + prArticle),
+						[]byte(prDepth + "-" + pagerank));
+					err != nil { return err }
+				}
+			}
+		}
+		if articles[key].NodeID != nil {
+			if err := b.Put([]byte("NodeID"), articles[key].NodeID); err != nil { return err }
+		}
+		if articles[key].Links != nil {
+			var links string
+			for num, link := range articles[key].Links {
+				links = links + link
+				if num < len(articles[key].Links) {
+					links = links + "-"
+				}
+			}
+			if err := b.Put([]byte("Links"), []byte(links)); err != nil { return err }
+		}
+	}
+}
 func Dijkstra(request dijkstra.Request) (path []string) {
 	return dijkstra.Get(request)
 }
@@ -265,7 +337,7 @@ func WriteTXT(articles map[string]PageItems) (err error) {
 		defer file.Close()
 		file.WriteString("* " + articleName)
 		file.WriteString("** Sections")
-		for sectionName, sectionText := range(articles[articleName].Sections) {
+		for sectionName, sectionText := range articles[articleName].Sections {
 			file.WriteString("*** " + sectionName)
 			file.WriteString("    " + sectionText)
 		}
