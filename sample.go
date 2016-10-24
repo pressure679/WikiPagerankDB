@@ -2,7 +2,7 @@
 	 This is basically just an API for reading a wikipedia dump from https://dumps.wikimedia.org/enwiki/,
 	 the search engine/database will be created with elasticsearch or bleve. - apart from go-wikiparse this has the
 	 GetSections method.
-		Copyright (C) 2015  Vittus Mikiassen
+		Copyright (C) 2015-2016 Vittus Mikiassen
 
 		This program is free software: you can redistribute it and/or modify
 		it under the terms of the GNU General Public License as published by
@@ -37,45 +37,43 @@ import (
 	"regexp"
 	"errors"
 	"github.com/dustin/go-wikiparse"
-	"github.com/Professorq/dijkstra"
 	"github.com/boltdb/bolt"
+	"github.com/alixaxel/pagerank"
+	"github.com/pressure679/dijkstra" // See RosettaCode, I cannot take credit for this package.
 	// "sync"
-	//"github.com/alixaxel/pagerank"
-	// _ "github.com/go-sql-driver/mysql"
-	// "database/sql"
-	//"testing"
+	// "testing"
 )
 
-// Data is pagerank, key is depth from base article, item is pagerank.
-type Data map[string]float64
+// Data is pagerank, NodeID is depth from base article, item is pagerank.
+// TODO: NodeID is in PageItems type; it is not needed in Data type. - Update.
+type Data map[uint]float64
 type PageItems struct {
 	// Sections, title indicated by key, item is content/text
 	Sections map[string]string
-	
+
 	// The NodeID, used for dijkstra's algorithm
 	NodeID uint
 	
 	// This article's pagerank for another article (the other articles has a max depth of 7 indicated by the 2nd map's key, pagerank is indicated by 2nd map's item)
 	Pagerank map[uint8]Data
 	
-	// links from this article, used to collect them for the MySQL DB, after that the program will use them to utilize the DB for Dijkstra's algorithm and the Pagerank algorithm.
+	// Links from this article, used to collect them for the MySQL DB, after that the program will use them to utilize the DB for Dijkstra's algorithm and the Pagerank algorithm.
 	Links []string
 }
 
+// TODO: Better not have any runtime errors...
+// TODO: Check if BoltDB differs between articles bucket and graph bucket in all bolt functions.
+// TODO: Check for runtime errors, if so, use GDB to make breakpoints and so forth.
+// TODO: Add NLP functionality to optimize the program's functionality, Check if Google's N-Gram is ported to Golang on Github, else use the C++ NLP that is ported to Golang (the one you made a pull request for on awesome-golang and posted on the golang FB group).
+// - token counts, n-grams, stop words, txt length normalization, TF-IDF (see ML For Dummies for reference).
 func main() {
-	// TODO: mod the pagerank function. We want to get pagerank of neighboring articles from a base article.
-	// TODO: How to Pagerank? - We have to have all articles to find their leaves with a max depth of 7; We have to either pagerank them before, after or during the creation of the bolt db files.
-	// Use the A* algorithm inside the pagerank function. Inside the A*'s method use the BoltGet function to get neighbors of current article, and so forth. When all neighboring articles are gotten we pagerank them using alixaxel's Pagerank package.
-	// The neighbors have a max depth of 7, so 7^7*x articles, so maybe 5.000 articles are in RAM at once making, so 5.000 * title_length * 256 should make the size, so about 500MB RAM for each dump file to pagerank them.
-	
+
 	var articles map[string]PageItems
 	articles = make(map[string]PageItems)
 	var fileName [2]string// 1st and last article in each xml dump - to create bolt db files.
 	dumpFiles, err := GetFilesFromArticlesDir()
 	if err != nil { panic(err) }
-	// Put pagerank in a separate bolt db file, maybe together with the graph of wikipedia for Dijkstra purposes. - struggle with how building a db is done with BoltDB or use MySQL.
 	var NodeIDCnt PageItems
-	// Add a goroutine here running for concurrency
 	for cnt, file := range dumpFiles {
 		if cnt == 0 {
 			fileName[0] = file
@@ -83,7 +81,6 @@ func main() {
 			fileName[1] = file
 			if err = BoltCreate(fileName[0] + fileName[1]); err != nil { panic(err) }
 		}
-		// All articles in a dump file is read here, approx. 250mb for each dump, approx. 25 dump files.
 		ioReader, err := DecompressBZip(file)
 		if err != nil { panic(err) }
 		wikiParser, err :=  wikiparse.NewParser(ioReader)
@@ -95,13 +92,11 @@ func main() {
 			if err0 != nil { panic(err0) }
 		}
 		if err != nil { panic(err) }
-		// TODO: Bolt
 		articlesDB, err := bolt.Open("/home/naamik/go/wikiproj/" + fileName[0] + "-" + fileName[1] + ".boltdb", 0666, nil)
 		if err != nil { log.Fatal(err) }
 		if err := articlesDB.Update(func(tx *bolt.Tx) error {
 			
 		}); err != nil { log.Fatal(err) }
-		// Name is not defined, we have to assign NodeIDCnt to all articles; range over articles and assign NodeIDCnt, either while reading the articles in ReadWikiXML or in a for method.
 		NodeIDCnt.NodeID = 0
 		for key, _ := range articles {
 			NodeIDCnt.NodeID++
@@ -112,7 +107,6 @@ func main() {
 
 		}); err != nil { log.Fatal(err) }
 	}
-	// TODO: add concurrency to each function if needed and also to function calls.
 }
 
 // Read all names of Bzipped Wikimedia XML files from "articles" dir.
@@ -213,84 +207,111 @@ func BoltGet(tx *bolt.Tx, articles, keys []string) (articlesData map[string]Page
 		for _, key := range keys {
 			// Following if/else if should really be a switch, but we check if the key's value is NodeID, Pagerank and so forth.
 			// Check BoltInsert to see how the keys are made.
-			value := tx.Bucket([]byte(article)).Get([]byte(key))
+			var value []byte
 			switch {
 			case strings.EqualFold(key, "NodeID"):
-				tmp.NodeID, err = strconv.Atoi(string(value))
+				value = tx.Bucket([]byte("graph")).Get([]byte(key))
+				var tmpNodeID int
+				tmpNodeID, err = strconv.Atoi(string(value))
 				if err != nil { return nil, err }
-			case strings.EqualFold(key[0:10], "pr_target-"):
-				tmp = PageItems{
+				tmp.NodeID = uint(tmpNodeID)
+			case strings.EqualFold(key[0:8], "pr_depth-"):
+				/* tmp = PageItems{
 					Pagerank: map[uint8]Data{
 						Article: map[string]float64{},
 					},
-				}
-				pr_data := strings.Split(string(value), "-")
-				tmp.Pagerank[article] = Data{}
-				tmp.Pagerank[article].Data = make(map[uint8]float64)
-				tmp.Pagerank[article].Data[strings.Atoi(pr_data[0])] = strings.Atoi(pr_data[1])
+				} */
+				keySplit := strings.Split(key, "-")
+				pr_depth, err := strconv.Atoi(keySplit[1])
+				if err != nil { return nil, err }
+				pr_depthUint8 := uint8(pr_depth)
+				// pr_nodeID, err := strconv.Atoi(pr_data[1])
+				if err != nil { return nil, err }
+				value = tx.Bucket([]byte(article)).Get([]byte(key))
+				pr, err := strconv.ParseFloat(string(value), 64)
+				if err != nil { return nil, err }
+				tmp.Pagerank[pr_depthUint8] = Data{}
+				// tmp.Pagerank[pr_depthUint8] = make(map[uint8]float64)
+				prNodeID, err := strconv.Atoi(string(value))
+				if err != nil { return nil, err }
+				tmp.Pagerank[pr_depthUint8][uint(prNodeID)] = pr
 			case strings.EqualFold(key, "Links"):
-				for _, item := range articles[key].Links {
-					tmp.Links = append(tmp.Links, strconv.Itoa(item))
+				value = tx.Bucket([]byte(article)).Get([]byte(key))
+				links := strings.Split(string(value), "-")
+				for _, link := range links {
+					tmp.Links = append(tmp.Links, link)
 				}
 			default: // If key contains a section name.
-				for sectionName, sectionText := range tmp.Sections {
-					tmp.Sections
-				}
+				// Make a BoltDB Cursor to iterate through values
+				value = tx.Bucket([]byte(article)).Get([]byte(key))
+				tmp.Sections[key] = string(value)
 			}
-			articles[key] = tmp
 		}
+		articlesData[article] = tmp
 	}
-	return articles
+	return articlesData, nil
 }
 // Graphs Wikipedia and gives the articles a NodeID number. Offset of NodeID is 1.
 func BoltInsertNodeID(tx *bolt.Tx, articles map[string]PageItems) (err error) {
+	var links string
+	var tmp string
 	for key, _ := range articles {
 		for num, link := range articles[key].Links {
 			links = links + link
 			if num < len(articles[key].Links) { links = links + "-" }
 		}
-		b, err := tx.Bucket([]byte(key))
+		b := tx.Bucket([]byte(key))
 		if err := b.Put([]byte("Links"), []byte(links)); err != nil { return err }
-		if err := b.Put([]byte("NodeID"), []byte(articles[key].NodeID)); err != nil { return err }
+		tmp := strconv.Itoa(int(articles[key].NodeID))
+		if err := b.Put([]byte("NodeID"), []byte(tmp)); err != nil { return err }
 	}
+	return nil
 }
 // Gives articles their pageranks for neighbors with a max distance of 7.
-func Pagerank(articles map[uint8][]string) (pagerank map[string]Data) {
+// Map key is node depth, item is NodeID (See type PageItems and type Data)
+func Pagerank(articles map[uint8][]uint) (pr map[uint8]Data) {
 	graph := pagerank.NewGraph()
-	var distance uint8
-	for distance = 0; distance < len(articles); i++ {
-		for _, article := range(articles[distance]) {
-			graph.Link(1, article, i)
+	var absArticle uint = 0
+	var distance uint8 = 0
+	for distance = 0; distance < uint8(7); distance++ {
+		for _, article := range articles[distance] {
+			graph.Link(1, uint32(article), float64(distance + 1))
 		}
 	}
-	var absArticle uint16 = 0
-	pagerank = make(map[string]Data)
-	graph.Rank(0.85 /*put damping factor here or just settle with weighing the graph?*/, 0.000001 /*precision*/, func(node uint64, rank float64) {
-		pagerank[articles[distance][absArticle]][distance] = rank
+	absArticle = 0
+	distance = 0
+	pr = make(map[uint8]Data)
+	graph.Rank(0.85 /*put damping factor here or just settle with weighing the graph?*/, 0.000001 /*precision*/, func(node uint32, rank float64) {
+		pr[distance][absArticle] = rank
 		absArticle++
-		if absArticle == len(articles[distance]) {
+		if absArticle == uint(len(articles[distance])) {
 			distance++
 			absArticle = 0
 		}
 	})
+	return pr
 }
 func BoltInsertPagerank(tx *bolt.Tx, articles map[string]PageItems) (err error) {
 	var links string
 	// Format is: bucket name: pr_target-<article>, bucket content: <depth>-<pagerank>
 	for key, _ := range articles {
 		for prDepth, _ := range articles[key].Pagerank {
-			b, err := tx.Bucket([]byte(key))
+			b := tx.Bucket([]byte(strconv.Itoa(int(articles[key].NodeID))))
 			if err != nil { return err }
-			for prArticle, pagerank := range articles[key].Pagerank[prDepth] {
-				if err := b.Put([]byte("pr_target-" + prArticle), []byte(strconv.Itoa(prDepth) + "-" + strconv.Itoa(pagerank))); err != nil { return err }
+			for _, pagerank := range articles[key].Pagerank[prDepth] {
+				strPrFloat := strconv.FormatFloat(pagerank, 'f', 3, 64)
+				strPrDepth := strconv.Itoa(int(prDepth))
+				if err != nil { return err }
+				if err := b.Put([]byte("pr_depth-" + strPrDepth), []byte(strPrFloat)); err != nil { return err }
 			}
 		}
 	}
+	return nil
 }
 func BoltUpdate(tx *bolt.Tx, articles map[string]PageItems) (err error) {
 	for key, _ := range articles {
-		b, err := tx.Bucket([]byte(key))
 		if articles[key].Sections != nil {
+			b := tx.Bucket([]byte(key))
 			for sectionKey, sectionText := range articles[key].Sections {
 				if err := b.Put(
 					[]byte(sectionKey),
@@ -299,19 +320,22 @@ func BoltUpdate(tx *bolt.Tx, articles map[string]PageItems) (err error) {
 			}
 		}
 		if articles[key].Pagerank != nil {
+			b := tx.Bucket([]byte("graph"))
 			for prDepth, _ := range articles[key].Pagerank {
-				for prArticle, pagerank = range articles[key].Pagerank[prDepth] {
+				for prArticle, pagerank := range articles[key].Pagerank[prDepth] {
 					if err := b.Put(
-						[]byte("pr_target-" + prArticle),
-						[]byte(prDepth + "-" + pagerank));
+						[]byte("pr_target-" + strconv.Itoa(int(articles[key].NodeID))),
+						[]byte(strconv.Itoa(int(prDepth)) + "-" + strconv.FormatFloat(pagerank, 'f', 3, 64)));
 					err != nil { return err }
 				}
 			}
 		}
-		if articles[key].NodeID != nil {
-			if err := b.Put([]byte("NodeID"), articles[key].NodeID); err != nil { return err }
+		if articles[key].NodeID != 0 {
+			b := tx.Bucket([]byte("graph"))
+			if err := b.Put([]byte("NodeID"), []byte(strconv.Itoa(int(articles[key].NodeID)))); err != nil { return err }
 		}
 		if articles[key].Links != nil {
+			b := tx.Bucket([]byte(key))
 			var links string
 			for num, link := range articles[key].Links {
 				links = links + link
@@ -322,6 +346,7 @@ func BoltUpdate(tx *bolt.Tx, articles map[string]PageItems) (err error) {
 			if err := b.Put([]byte("Links"), []byte(links)); err != nil { return err }
 		}
 	}
+	return nil
 }
 func Dijkstra(request dijkstra.Request) (path []string) {
 	return dijkstra.Get(request)
@@ -334,6 +359,7 @@ func WriteTXT(articles map[string]PageItems) (err error) {
 	// fWriter := bufio.NewWriter(ioWriter)
 	for articleName, _ := range(articles) {
 		file, err := os.Create(articleName)
+		if err != nil { return err }
 		defer file.Close()
 		file.WriteString("* " + articleName)
 		file.WriteString("** Sections")
@@ -342,6 +368,7 @@ func WriteTXT(articles map[string]PageItems) (err error) {
 			file.WriteString("    " + sectionText)
 		}
 	}
+	return nil
 }
 
 // TODO: make a basic chatbot which uses Eliza's principle of chatting, the basic outrule for chatting uses Bloom's Taxonomical levels to present data/chat with a user.
@@ -355,3 +382,4 @@ func WriteTXT(articles map[string]PageItems) (err error) {
 // TODO: if the chatbot functionality works well; hook it up to 1 or more irc channels.
 
 // TODO: make a GUI for Android for the chatbot functionality
+
