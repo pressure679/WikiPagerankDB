@@ -1,7 +1,7 @@
 /*
 	 This is basically just an API for reading a wikipedia dump from https://dumps.wikimedia.org/enwiki/,
 	 the search engine/database will be created with elasticsearch or bleve. - apart from go-wikiparse this has the GetSections method.
-		Copyright (C) 2015-2016 Vittus Mikiassen
+		Copyright (C) 2015-2017 Vittus Mikiassen
 
 		This program is free software: you can redistribute it and/or modify
 		it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
 
 		You should have received a copy of the GNU General Public License
 		along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 // The Wikipedia articles can be downloaded at https://dumps.wikimedia.org/enwiki/latest/
 // Package main provides ...
 
@@ -25,61 +25,49 @@
 // Then get the top 5 or 10 best pageranking neighboring articles from each article in the path (len(path) / 7 * 3, then 5, then 7 if RAM is clocked), then use WriteTXT function to write the summaries of each article (path and top 5 or 10 pageranking algorithms).
 
 package main
-
 import (
-	"compress/bzip2"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"compress/bzip2"
 	"os"
 	// "bufio"
-	"regexp"
 	"sort"
+	// "strings"
 	"strconv"
-	"strings"
-	// "runtime"
+	"regexp"
 	// "flag"
 	// "errors"
-	_ "github.com/go-sql-driver/mysql"
-	"database/sql"
 	"github.com/dustin/go-wikiparse"
+	"github.com/boltdb/bolt"
 	// "github.com/arnauddri/algorithms/data-structures/graph"
 	"github.com/alixaxel/pagerank"
 	"rosettacode/dijkstra" // See RosettaCode, I cannot take credit for this package.
 	// "sync"
 	// "testing"
+	_ "github.com/go-sql-driver/mysql"
+	"database/sql"
 )
 
 type SuccessorPr map[string][]byte
+
+// TODO: Implement this into func SqlPrepare and make a belonging SqlInsert function.
 type PageItems struct {
 	// Sections, title indicated by key, item is content/text
 	Sections map[string]string
+
+	Data map[string](map[string]sql.Stmt)
 
 	// The NodeID, used for grahping/treeing
 	NodeID []byte
 
 	// Weight/distance from root
-	Weight [6]bool
+	Weight uint8
 
 	// Links from this article, used to collect them for the MySQL Db, after that the program will use them to utilize the Db for Dijkstra's algorithm and the Pagerank algorithm.
 	Links string
 
 	Pageranks map[uint8]SuccessorPr
-}
-type WikiGraph struct {
-	Vertices map[string]map[[6]bool][]string
-}
-type MySQL struct {
-	// For inserting articles
-	LinksLen int
-	SqlLinksDT string
-	NodeIDLen int
-	SqlNodeIDDT string
-	SectionLen int
-	SqlAbsSectionDT string
-
-	// For selecting articles for the graph
-	Graph WikiGraph
 }
 
 func main() {
@@ -88,314 +76,353 @@ func main() {
 	// base := flag.Bool("base", false, "A base article, the article used to communicate with other users.")
 	// link := flag.Bool("link", false, "A target article, an article and etc. to link by either getting the Bloom-circle from another user or to create it your own pc, after the Bloom-circle is created it will link the your base articles with the new.")
 	// flag.Parse()
-
-	defer recover()
+	
+	// var articles map[string]PageItems
+	
 	dumpFiles, err := GetFilesFromArticlesDir()
-	if err != nil {
-		panic(err)
-	}
+	defer recover()
+	if err != nil { panic(err) }
 	// fmt.Println(dumpFiles)
-  db, err := sql.Open("mysql", "naamik:WM\"slLE/vm.R@tcp(localhost:3306)/example_db")
+
+	db, err := sql.Open(
+		"mysql",
+		"root:glvimia7@tcp(localhost:3306)/wiki")
+	if err != nil { panic(err) }
+
+	// I do not think my OS supports the Prepare method, so execute directly, gobyexample says it does not matter anyway.
+	// Also, the boltdb version would probably benefit from a counter too (commiting to disk after 1000 read articles).
+	/* StmtCreateSqlTable, err := db.Prepare("CREATE TABLE `?` (NodeID INT, Links CHAR(`?`))")
+	if err != nil { panic(err) }
+	StmtInsertNodeIDAndLinks, err := db.Prepare("INSERT INTO `?` (NodeID, Links) VALUES (?, ?))")
+	if err != nil { panic(err) }
+	StmtAddSection, err := db.Prepare("ALTER TABLE `?` ADD `?` blob")
+	if err != nil { panic(err) }
+	StmtInsertSection, err := db.Prepare("INSERT INTO `?` (`?`) VALUES (`?`)")
+	if err != nil { panic(err) } */
+
+	// tx, err := db.Begin()
+	// if err != nil { panic(err) }
+
+	// articles := make(map[string]PageItems)
+	
 	for _, file := range dumpFiles {
-		fmt.Println("Reading", file)
 		// fmt.Println(file)
-		ioReader, allocSize, err := DecompressBZip(file)
-		if err != nil { fmt.Println("ioReader, DecompressBZip error"); panic(err) }
-		wikiParser, err := wikiparse.NewParser(ioReader)
-		if err != nil { fmt.Println("Error occured"); panic(err) }
-		// fmt.Println("Read", file)
+		ioReader, err := DecompressBZip(file)
+		if err != nil { panic(err) }
+		
+		wikiParser, err :=  wikiparse.NewParser(ioReader)
+		if err != nil { panic(err) }
+
+		var cnt uint16 = 0
 		for {
-			articles := make(map[string]PageItems)
 			page, err := wikiParser.Next()
-			if err != nil {
-				if strings.EqualFold(err.Error(), io.EOF) { fmt.Println("Wiki dump", file, "read"); break } else { fmt.Println("Error occured:", err); continue } /* panic(err) */
-			}
-			articles[page.Title], err = ReadWikiXML(*page)
-			if err != nil { fmt.Println("Error occured:", err.Error(), "\n" + page.Title, "wasn't read"); break }
-			err = SqlInsertArticle(db, articles)
+			if err != nil { break }
+			cnt++
+
+			// articles[page.Title], err = ReadWikiXML(*page)
+			pageItems, err := ReadWikiXML(*page)
 			if err != nil { panic(err) }
-			articles = nil
+
+			// _, err = StmtCreateSqlTable.Exec(page.Title, strconv.Itoa(len(articles[page.Title].Links)))
+			// _, err = StmtInsertNodeIDAndLinks.Exec(page.Title, page.ID, articles[page.Title].Links)
+
+			// _, err = StmtCreateSqlTable.Exec(page.Title, len(articles[page.Title].Links))
+			// if err != nil { panic(err) }
+			// _, err = StmtInsertNodeIDAndLinks.Exec(page.Title, page.ID, articles[page.Title].Links)
+			// if err != nil { panic(err) }
+			/* _, err = StmtCreateSqlTable.Exec(page.Title, len(pageItems.Links))
+			if err != nil { panic(err) }
+			_, err = StmtInsertNodeIDAndLinks.Exec(page.Title, page.ID, pageItems.Links)
+			if err != nil { panic(err) } */
+			// _, err = db.Exec("CREATE TABLE `" + page.Title + "` (NodeID INT, Links BLOB")
+			_, err = db.Exec("CREATE TABLE `" + page.Title + "` (NodeID INT, Links BLOB)")
+			if err != nil { panic(err) }
+			_, err = db.Exec("INSERT INTO `" + page.Title + "` (NodeID, Links) Values (?, ?)", page.ID, pageItems.Links)
+			if err != nil { panic(err) }
+			for sectionTitle, sectionBody := range pageItems.Sections {
+			// for sectionTitle, sectionBody := range articles[page.Title].Sections {
+				_, err = db.Exec("ALTER TABLE `" + page.Title + "` ADD `" + sectionTitle + "` BLOB")
+				if err != nil { panic(err) }
+				_, err = db.Exec("INSERT INTO `" + page.Title + "` (`" + sectionTitle + "`) VALUES (?)", sectionBody)
+				if err != nil { panic(err) }
+
+				/* _, err = StmtAddSection.Exec(page.Title, sectionTitle)
+				if err != nil { panic(err) }
+				_, err = StmtInsertSection.Exec(page.Title, sectionTitle, sectionBody)
+				if err != nil { panic(err) } */
+				/* _, err = tx.Exec("ALTER TABLE `" + page.Title + "` ADD `" + sectionTitle + "` BLOB")
+				_, err = tx.Exec("INSERT INTO `" + page.Title + " (`" + sectionTitle + "`) VALUES `" + sectionBody + "`") */
+
+				// if err := SqlInsert(*db, articles); err != nil { panic(err) }
+				// articles = nil
+			}
+			// if cnt == 1000 {
+				// tx.Commit()
+				// cnt = 0
+				// articles = nil
+				// articles = make(map[string]PageItems)
+			// }
 		}
-		// go runtime.GC()
-		fmt.Println("Appended", file)
+		
+		// if cnt > 0 {
+			// tx.Commit()
+			// cnt = 0
+			// articles = nil
+			// articles = make(map[string]PageItems)
+		// }
+		
+		fmt.Println("appended " + file)
 	}
+	db.Close()
 
 	/* if *base {
-	baseFile, err := os.Open("bases.txt")
-	if err != nil { panic(err) }
-	fileReader := bufio.NewReader(baseFile)
-	for err == nil {
-		baseArticle, _, err := fileReader.ReadLine()
+		baseFile, err := os.Open("bases.txt")
 		if err != nil { panic(err) }
-		// wikiGraph, err := BoltGetGraph(string(baseArticle))
-		if err != nil { panic(err) }
-		articles, err := BoltGetArticles(string(baseArticle))
-		if err != nil { panic(err) }
-		articles, err = BoltGetChildren(string(baseArticle), articles)
-		if err != nil { panic(err) }
-		articlesPr, err := PagerankGraph(string(baseArticle), articles[string(baseArticle)].Pageranks)
-		if err != nil { panic(err) }
-		for depth, item := range articlesPr {
-			articles[string(baseArticle)].Pageranks[depth] = item
-		}
-		if err := BoltInsertPagerank(articles); err != nil { panic(err) }
-		err = WriteTxt(articles)
-		if err != nil { panic(err) }
-	} */
-	// Then use the "link" flag to execute the dijkstra function from each created base from earlier. The top ranking shared pages with a max distance of 7 from bases should be returned as well.
-	// Use the WriteTxt function for
+		fileReader := bufio.NewReader(baseFile)
+		for err == nil {
+			baseArticle, _, err := fileReader.ReadLine()
+			if err != nil { panic(err) }
+			// wikiGraph, err := BoltGetGraph(string(baseArticle))
+			if err != nil { panic(err) }
+			articles, err := BoltGetArticles(string(baseArticle))
+			if err != nil { panic(err) }
+			articles, err = BoltGetChildren(string(baseArticle), articles)
+			if err != nil { panic(err) }
+			articlesPr, err := PagerankGraph(string(baseArticle), articles[string(baseArticle)].Pageranks)
+			if err != nil { panic(err) }
+			for depth, item := range articlesPr {
+				articles[string(baseArticle)].Pageranks[depth] = item
+			}
+			if err := BoltInsertPagerank(articles); err != nil { panic(err) }
+			err = WriteTxt(articles)
+			if err != nil { panic(err) }
+		} */
+		// Then use the "link" flag to execute the dijkstra function from each created base from earlier. The top ranking shared pages with a max distance of 7 from bases should be returned as well.
+		// Use the WriteTxt function for 
 }
 
 // Read all names of Bzipped Wikimedia XML files from "articles" dir.
 func GetFilesFromArticlesDir() (files []string, err error) {
-	osFileInfo, err := ioutil.ReadDir("articles")
-	if err != nil {
-		return nil, err
-	}
+	osFileInfo, err := ioutil.ReadDir("/run/media/naamik/Data/articles")
+	if err != nil { return nil, err }
 	for _, fileInfo := range osFileInfo {
 		if !fileInfo.IsDir() {
 			files = append(files, fileInfo.Name())
 		}
 	}
-	return files, nil
+	return
 }
-
 // uses os.Open to make an io.Reader from bzip2.NewReader(os.File) to read wikipedia xml file
-func DecompressBZip(file string) (ioReader io.Reader, fileSize int64, err error) {
-	osFile, err := os.Open("D:/Documents/articles/" + file)
-	if err != nil {
-		return nil, -1, err
-	}
-	fileStat, err := osFile.Stat()
-	if err != nil {
-		return nil, fileStat.Size(), err
-	}
-	ioReader = bzip2.NewReader(osFile)
-	return ioReader, fileStat.Size(), nil
+func DecompressBZip (file string) (ioReader io.Reader, err error) {
+	osfile, err := os.Open("/run/media/naamik/Data/articles/" + file)
+	if err != nil { return nil, err }
+	ioReader = bzip2.NewReader(osfile)
+	return
 }
 
 // Reads Wikipedia articles from a Wikimedia XML dump bzip file, return the Article with titles as map keys and PageItems (Links, Sections and Text) as items - Also add Section "See Also"
 func ReadWikiXML(page wikiparse.Page) (pageItems PageItems, err error) {
 	for i := 0; i < len(page.Revisions); i++ {
-		// if text is not nil then add to articles text and sections to articles
+		// if text is not nil then add to articles text and sections to articles 
 		if page.Revisions[i].Text != "" {
 			pageItems.Sections = make(map[string]string)
-			pageItems.Sections, err = GetSections(page.Revisions[i].Text, page.Title)
-			if err != nil { return nil, err }
-			Links := wikiparse.FindLinks(page.Revisions[i].Text)
-			for num, link := range Links {
-				if num == 0 {
-					pageItems.Links = append(pageItems.Links, link)
+			pageItems.Sections, err = GetSections(page.Revisions[i].Text)
+			if err != nil { return pageItems, err }
+			for num, link := range wikiparse.FindLinks(page.Revisions[i].Text) {
+				if num == 1 {
+					pageItems.Links = link
 				} else {
-					pageItems.Links = append(pageItems.Links, "-" + link)
+					pageItems.Links = pageItems.Links + "-" + link
 				}
 			}
+			if err != nil { return pageItems, err }
 			pageItems.NodeID = []byte(strconv.Itoa(int(page.Revisions[i].ID)))
 		}
 	}
-	return pageItems, nil
+	return
 }
-
 // Gets sections from a wikipedia article, page is article content, title is article title
-func GetSections(page, title string) (sections map[string]string, err error) {
+func GetSections(page string) (sections map[string]string, err error) {
 	sections = make(map[string]string)
 	// Make a regexp search object for section titles
 	re, err := regexp.Compile("[=]{2,5}.{1,50}[=]{2,5}")
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return }
 	// fmt.Println(title + "\n" + page)
 	index := re.FindAllStringIndex(page, -1)
-	// return nil, errors.New("page's index is 0") ?
-	// if len(index) == 0 { return nil, errors.New("page's index is 0") }
+	if len(index) == 0 { return nil, nil }
 	// Look at how regex exactly does this
-	/* if strings.EqualFold(strings.ToLower(title), "southern hemisphere" ) {
-		fmt.Println(index, len(page))
-		fmt.Println(page)
-	} */
-	for i := 0; i < len(index)-1; i++ {
-		// fmt.Println(len(page), index[i])
-		if index[i] != nil {
-			if i == 0 {
-				// sections["Summary"] = page[:index[i + 1][0]-1]
-				/* fmt.Println(index)
-				fmt.Println(page[:index[i][0]-1])
-				fmt.Println(page) */
-				sections["Summary"] = page[:index[i][1]-1] // Error: slice out of bounds at article "Southern Hemisphere"
-			} else if i < len(index)-1 {
-				sections[page[index[i][0]:index[i][1]]] = page[index[i][1]:index[i+1][0]] // Assume this will create an error like the "if i == 0" condition error (maybe not)
-				// sections[page[index[i][0]:index[i]]] = page[index[i]:index[i+1]]
-			} else {
-				sections[page[index[i][0]:index[i][1]]] = page[index[i][1]:len(page)] // Assume this will create an error like the "if i == 0" condition error /maybe not)
-				// sections[page[index[i]:index[i]]] = page[index[i]:len(page)]
-			}
+	for i := 0; i < len(index); i++ {
+		if i == 0 {
+			sections["Summary"] = page[:index[i][0]] // Error: slice out of bounds
+		} else if i < len(index)-1 {
+			sections[page[index[i][0]:index[i][1]]] = page[index[i][1]:index[i+1][0]] // Assume this will create an error like the "if i == 0" condition error (maybe not)
+			// sections[page[index[i][0]:index[i]]] = page[index[i]:index[i+1]]
+		} else {
+			sections[page[index[i][0]:index[i][1]]] = page[index[i][1]:len(page)] // Assume this will create an error like the "if i == 0" condition error /maybe not)
+			// sections[page[index[i]:index[i]]] = page[index[i]:len(page)]
 		}
 	}
-	return sections, nil
+	return
 }
 
-func (self MySQL) InsertArticle(db sql.DB, articles map[string]PageItems) (err error) {
+// I realized this was wrong, the intend was to make prepared statements. I thought the db.Prepare method returned prepared statements with the variables' content, but it seems the sql driver I use does not do so. Instead of this I will use db.Prepare and create a transaction to insert the variables into the given transaction's statements.
+/* func SqlPrepare(db *sql.DB, articles map[string]PageItems) (data map[string](map[string]sql.Stmt), err error) {
+	data = make(map[string](map[string]Sql.Stmt))
 	for title, items := range articles {
-		self.LinksLen = len(items.Links)
-		// Determine length of the string containing links and assign mysql datatype accordingly
-		switch {
-		case self.LinksLen < 256:
-			SqlLinksDT = "TINYBLOB"
-		case len(links) >= 256 && self.LinksLen < 65536:
-			SqlLinksDT = "BLOB"
-		case self.LinksLen >= 65536 && self.LinksLen < 16777216:
-			SqlLinksDT = "MEDIUMBLOB"
-		case self.LinksLen >= 16777216 && self.LinksLen < 4294967296:
-			SqlLinksDT = "LONGBLOB"
+		// sections := make([]string, len(items.Sections))
+		data[title]["SetTable"], err = db.Prepare("CREATE TABLE `" + title + "` (NodeID int, Links char(" + strconv.Itoa(len(items.Links)) + ")")
+		data[title]["InsertLinks"], err = db.Prepare("INSERT INTO `" + title + "` (NodeID, Links) VALUES (?, ?)", items.NodeID, items.Links)
+		if err != nil { return nil, err }
+		// TODO: Update to fit with CREATE TABLE
+		for sectionTitle, sectionBody := range items.Sections {
+			data[title]["AlterTableAdd" + sectionTitle], err = db.Prepare("ALTER TABLE `" + title + "` ADD `" + sectionTitle + "` blob")
+			if err != nil { return nil, err }
+			data[title].SqlStmtsAndArgs["Insert" + sectionTitle], err = db.Prepare("INSERT INTO `" + title + "` (" + sectionTitle + ") VALUES (?)", sectionBody)
+			if err != nil { return nil, err }
 		}
-		// Determine size of the int containing NodeID/ID and assign mysql datatype accordingly
-		switch {
-		case items.NodeID < 256:
-			self.SqlNodeIDDT = "TINYINT"
-		case items.NodeID >= 256 && items.NodeID < 65536:
-			self.SqlNodeIDDT = "INT"
-		case items.NodeID >= 65536 && items.NodeID < 16777216:
-			SqlNODEIDDT = "MEDIUMINT"
-		case items.NodeID >= 16777216 && items.NodeID < 4294967296:
-			SqlNODEIDDT = "BIGINT"
-		}
-		_, err = db.Exec("CREATE TABLE " +
-			title +
-			" (NodeID " +
-			self.SqlNodeIDDT +
-			", Links " +
-			self.SqlLinksDDT +
-			";")
-		_, err = db.Exec("INSERT INTO " +
-			title +
-			" (NodeID, Links) VALUES (?, ?);",
-			items.NodeID, items.Links)
+	}
+	return sqlStmts, nil
+} */
+
+// This is not needed, although the function is very much reusable
+/* func SqlInsert(tx *sql.Tx, articles map[string]PageItems) (err error) {
+	for title, items := range articles {
+		// sections := make([]string, len(items.Sections))
+		sqlStmts[title]["tree"], err = tx.Exec("CREATE TABLE `" + title + "` (NodeID int, Links char(" + strconv.Itoa(len(items.Links)) + ")")
+		_, err = db.Prepare("INSERT INTO `" + title + "` (NodeID, Links) VALUES (?, ?)", items.NodeID, items.Links)
 		if err != nil { return err }
 		// TODO: Update to fit with CREATE TABLE
 		for sectionTitle, sectionBody := range items.Sections {
-			self.SectionLen = len(sectionBody)
-			// Determine length of the string containing section and assign mysql datatype accordingly
-			switch {
-			case self.SectionLen < 256:
-				self.SqlAbsSectionDT = "TINYBLOB"
-			case self.SectionLen >= 256 && self.SectionLen < 65536:
-				self.SqlAbsSectionDT = "BLOB"
-			case self.SectionLen >= 65536 && self.SectionLen < 16777216:
-				self.SqlAbsSectionDT = "MEDIUMBLOB"
-			case self.SectionLen >= 65536 && self.SectionLen < 4294967296:
-				self.SqlAbsSectionDT = "LONGBLOB"
-			}
-			_, err = db.Exec("ALTER TABLE " +
-				title +
-				" ADD COLUMN " +
-				sectionTitle +
-				" " +
-				self.SqlAbsSectionDT +
-				";",
-			)
+			sqlStmts[title][sectionTitle], err = tx.Exec("ALTER TABLE `" + title + "` ADD `" + sectionTitle + "` blob")
 			if err != nil { return err }
-			_, err = db.Exec("INSERT INTO " +
-				title +
-				"(" +
-				sectionTitle +
-				") VALUES (?);",
-				sectionBody)
+			_, err = tx.Exec("INSERT INTO `" + title + "` (" + sectionTitle + ") VALUES (?)", sectionBody)
 			if err != nil { return err }
 		}
 	}
-	return nil
-}
-func (self MySQL) SqlGetGraph(db sql.DB, article string) {
-	var Link0 []string
-	var Link1 []string
-	var Link2 []string
-	var Link3 []string
-	var Link4 []string
-	var Link5 []string
-	var Link6 []string
-	rows0, err := db.Query("SELECT Links FROM " + article);
-	if err != nil { return nil, err }
-	self.Graph.Vertices[article] = make(map[[6]bool]string)
-	for rows0.Next() {
-		err = rows0.Scan(&Links0)
-		for _, link0 := range Links0 {
-			self.Graph.Vertices[article][[6]bool{true, false, false, false, false, false, false}] = append(self.Graph.Vertices[article][[6]bool{true, false, false, false, false, false, false}], link0)
-		}
-		
-		rows1, err := db.Query("SELECT Links FROM " + link0);
-		if err != nil { return nil, err }
-		self.Graph.Vertices[article] = make(map[[6]bool]string)
-		for rows1.Next() {
-			err = rows1.Scan(&Links1)
-			for _, link1 := range Links1 {
-				self.Graph.Vertices[article][[6]bool{false, true, false, false, false, false, false}] = append(self.Graph.Vertices[article][[6]bool{false, true, false, false, false, false, false}], link1)
-			}
-			
-			rows2, err := db.Query("SELECT Links FROM " + link1);
-			if err != nil { return nil, err }
-			self.Graph.Vertices[article] = make(map[[6]bool]string)
-			for rows2.Next() {
-				err = rows2.Scan(&Links2)
-				for _, link2 := range Links2 {
-					self.Graph.Vertices[article][[6]bool{false, false, true, false, false, false, false}] = append(self.Graph.Vertices[article][[6]bool{false, false, true, false, false, false, false}], link2)
-				}
-				
-				rows3, err := db.Query("SELECT Links FROM " + link2);
-				if err != nil { return nil, err }
-				self.Graph.Vertices[article] = make(map[[6]bool]string)
-				for rows3.Next() {
-					err = rows3.Scan(&Links3)
-					for _, link3 := range Links3 {
-						self.Graph.Vertices[article][[6]bool{false, false, false, true, false, false, false}] = append(self.Graph.Vertices[article][[6]bool{false, false, false, true, false, false, false}], link3)
-					}
-					
-					rows4, err := db.Query("SELECT Links FROM " + link3);
-					if err != nil { return nil, err }
-					self.Graph.Vertices[article] = make(map[[6]bool]string)
-					for rows4.Next() {
-						err = rows4.Scan(&Links4)
-						for _, link4 := range Links4 {
-							self.Graph.Vertices[article][[6]bool{false, false, false, false, true, false, false}] = append(self.Graph.Vertices[article][[6]bool{false, false, false, false, true, false, false}], link4)
-						}
-						
-						rows5, err := db.Query("SELECT Links FROM " + link4);
-						if err != nil { return nil, err }
-						self.Graph.Vertices[article] = make(map[[6]bool]string)
-						for rows4.Next() {
-							err = rows4.Scan(&Links4)
-							for _, link4 := range Links4 {
-								self.Graph.Vertices[article][[6]bool{false, false, false, false, true, false}] = append(self.Graph.Vertices[article][[6]bool{false, false, false, false, true, false}], link4)
-							}
-							
-							rows6, err := db.Query("SELECT Links FROM " + link5);
-							if err != nil { return nil, err }
-							self.Graph.Vertices[article] = make(map[[6]bool]string)
-							for rows6.Next() {
-								err = rows6.Scan(&Links6)
-								for _, link6 := range Links6 {
-									self.Graph.Vertices[article][[6]bool{false, false, false, false, false, false, true}] = append(self.Graph.Vertices[article][[6]bool{false, false, false, false, false, false, true}], link6)
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	return articles, nil
-}
-// TODO: Finish this function.
-func (self MySQL) SqlGetArticles(db sql.DB, articles []string) (articles map[string]PageItems, err error) {
+	return sqlStmts, nil
+} */
+
+/* func SqlSelectArticles(db sql.DB, table []string) (articles map[string]PageItems, err error) {
 	var tmp PageItems
-	for _, title := range articles {
+	for _, title := range table {
 		rows, err := db.Query("SELECT * FROM " + title);
 		if err != nil { return nil, err }
+		columns, err := rows.Columns()
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for rows.Next() {
+			for i, _ := range columns {
+				valuePtrs[i] = &values[i]
+			}
+			rows.Scan(valuePtrs...)
+			
+			for i, _ := range columns {
+				tmp = articles[title]
+				switch columns[i] {
+				case "NodeID":
+					if values[i] != nil {
+						tmp.NodeID = []byte(values[i].(string))
+						if err != nil { return nil, err }
+					}
+				// TODO: Update to fit with PageItems.Pageranks - Also update PagerankGraph to your original idea (better ranking or the tree already there, but also relative to vertices out of bounds of root, but still related to root).
+				case "Pagerank_1":
+					if values[i] != nil {
+						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
+						tmp.Pagerank[0], err = strconv.ParseFloat(values[i].(string), 32)
+						if err != nil { return nil, err }
+					}
+				case "Pagerank_2":
+					if values[i] != nil {
+						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
+						tmp.Pagerank[1], err = strconv.ParseFloat(values[i].(string), 32)
+						if err != nil { return nil, err }
+					}
+				case "Pagerank_3":
+					if values[i] != nil {
+						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
+						tmp.Pagerank[2], err = strconv.ParseFloat(values[i].(string), 32)
+						if err != nil { return nil, err }
+					}
+				case "Pagerank_4":
+					if values[i] != nil {
+						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
+						tmp.Pagerank[3], err = strconv.ParseFloat(values[i].(string), 32)
+						if err != nil { return nil, err }
+					}
+				case "Pagerank_5":
+					if values[i] != nil {
+						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
+						tmp.Pagerank[4], err = strconv.ParseFloat(values[i].(string), 32)
+						if err != nil { return nil, err }
+					}
+				case "Pagerank_6":
+					if values[i] != nil {
+						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
+						tmp.Pagerank[5], err = strconv.ParseFloat(values[i].(string), 32)
+						if err != nil { return nil, err }
+					}
+				case "Pagerank_7":
+					if values[i] != nil {
+						fmt.Println("case \"Pagerank\": columns[i]:\t", columns[i], values[i])
+						tmp.Pagerank[6], err = strconv.ParseFloat(values[i].(string), 32)
+						if err != nil { return nil, err }
+					}
+				default:
+					if values[i] != nil {
+						fmt.Println("default: columns[i]:\t", columns[i], values[i])
+						tmp.Sections[columns[i]] = values[i].(string)
+					}
+				}
+				articles[title] = tmp
+			}
+		}
 	}
 	return articles, nil
-}
+} */
 
-// TODO: use arnauddris algorithm pkg to make a directed graph of wikipedia with a max edge count from a root vertex of 7, then utilize the PagerankGraph function
+// TODO: Comment SqlUpdate and SqlDelete out or update them.
+/* func SqlUpdate(table, column string, value map[string]interface{}) (query string, err error) {
+	query, _, err = squirrel.Update(table).
+    Set(column, value).
+		ToSql()
+	if err != nil { return "", err }
+	return query, nil
+}
+func SqlDelete(table, column, value string) (query string, err error) {
+	query, _, err = squirrel.Delete(value).
+		From(table).
+		ToSql()
+	if err != nil { return "", err }
+	return query, nil
+} */
 func PagerankGraph(title string, children map[uint8]SuccessorPr) (map[uint8]SuccessorPr, error) {
+	articlesDb, err := bolt.Open("/home/naamik/go/wikiproj/articles.boltdb", 0666, nil)
+	if err != nil { return nil, err }
+	articlesTx, err := articlesDb.Begin(false)
+	if err != nil { return nil, err }
+	pagerankGraph := pagerank.NewGraph()
+	articlesTitle := make(map[string]string)
+	articlesDepth := make(map[string]uint8)
+	// TODO: add vertices out of bounds of root (get vertices 7 - depth from "absNeighbor")
+	for depth := uint8(1); depth < uint8(7); depth += 2 {
+		for neighbor, _ := range children[depth - 1] {
+			byteNeighborNodeID, err := strconv.Atoi(string(articlesTx.Bucket([]byte(neighbor)).Get([]byte("NodeID"))))
+			if err != nil { return nil, err }
+			articlesTitle[string(byteNeighborNodeID)] = neighbor
+			articlesDepth[string(byteNeighborNodeID)] = depth - 1
+			for article, _ := range children[depth] {
+				byteArticleNodeID, err := strconv.Atoi(string(articlesTx.Bucket([]byte(article)).Get([]byte("NodeID"))))
+				if err != nil { return nil, err }
+				articlesTitle[string(byteArticleNodeID)] = article
+				articlesDepth[string(byteArticleNodeID)] = depth
+				neighborNodeID, err := strconv.Atoi(string(byteArticleNodeID))
+				if err != nil { return nil, err }
+				articleNodeID, err := strconv.Atoi(string(byteNeighborNodeID))
+				if err != nil { return nil, err }
+				pagerankGraph.Link(uint32(articleNodeID), uint32(neighborNodeID), 1)
+			}
+		}
+	}
 	pr := make(map[uint8]SuccessorPr)
 	pagerankGraph.Rank(0.85 /*put damping factor here or just settle with weighing the graph?*/, 0.000001 /*precision*/, func(node uint32, rank float64) {
 		bufferRank := []byte(strconv.FormatFloat(rank, 10, 6, 64))
@@ -403,7 +430,6 @@ func PagerankGraph(title string, children map[uint8]SuccessorPr) (map[uint8]Succ
 	})
 	return pr, nil
 }
-
 // graphs the articles, preferred input is a graph with 7 a distance/number of node generations of 7.
 // TODO
 func Dijkstra(request dijkstra.Request) (path []string) {
@@ -412,23 +438,18 @@ func Dijkstra(request dijkstra.Request) (path []string) {
 
 type Pagerank float64
 type SortedPageranks []Pagerank
-
-func (a SortedPageranks) Len() int           { return len(a) }
-func (a SortedPageranks) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a SortedPageranks) Len() int { return len(a) }
+func (a SortedPageranks) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a SortedPageranks) Less(i, j int) bool { return a[i] < a[j] }
 func WriteTxt(articles map[string]PageItems) (err error) {
 	var pageranks map[string][]Pagerank
 	// fWriter := bufio.NewWriter(ioWriter)
-	for articleName, _ := range articles {
+	for articleName, _ := range(articles) {
 		file, err := os.Create(articleName + ".org")
-		if err != nil {
-			return err
-		}
+		if err != nil { return err }
 		defer file.Close()
 		indexFile, err := os.Create("index-" + articleName + ".org")
-		if err != nil {
-			return err
-		}
+		if err != nil { return err }
 		defer indexFile.Close()
 		file.WriteString("* " + articleName)
 		file.WriteString("** Sections")
@@ -441,9 +462,7 @@ func WriteTxt(articles map[string]PageItems) (err error) {
 			pagerankIndex := make(map[float64]string)
 			for article, pagerank := range articles[articleName].Pageranks[depth] {
 				float64Pr, err := strconv.ParseFloat(string(pagerank), 64)
-				if err != nil {
-					return err
-				}
+				if err != nil { return err }
 				pageranks[articleName] = append(pageranks[articleName], Pagerank(float64Pr))
 				pagerankIndex[float64Pr] = article
 			}
@@ -466,3 +485,4 @@ func WriteTxt(articles map[string]PageItems) (err error) {
 // Here I may also add a xml dump file of articles from HowStuffWorks if it provides such to add a functinality to the chatbot to answer "how" questions.
 // TODO: if the chatbot functionality works well; hook it up to 1 or more irc channels.
 // TODO: make a GUI for Android for the chatbot functionality
+
