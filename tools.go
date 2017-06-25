@@ -175,7 +175,6 @@ func GetSections(page, title string) (Content PageItems.Content, err error) {
 	reReferences, err := regexp.Compile("<ref>\\w+</ref>")
 	if err != nil { return }
 	for i := 0; i < len(refIndex); i++ {
-		// TODO: Remove the references from the Content.
 		if refIndex[i] != nil {
 			if i > 0 {
 				if refIndex[i][1] - 1 == refIndex[i - 1][0] - 1 {
