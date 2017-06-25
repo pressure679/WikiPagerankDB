@@ -1,7 +1,7 @@
 /*
 	 This is basically just an API for reading a wikipedia dump from https://dumps.wikimedia.org/enwiki/,
 	 the search engine/database will be created with elasticsearch or bleve. - apart from go-wikiparse this has the GetSections method.
-		Copyright (C) 2015-2016 Vittus Mikiassen
+		Copyright (C) 2015-2017 Vittus Mikiassen
 
 		This program is free software: you can redistribute it and/or modify
 		it under the terms of the GNU General Public License as published by
@@ -31,22 +31,18 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"os"
 	// "bufio"
+	"bytes"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	// "runtime"
-	// "flag"
-	// "errors"
 	"github.com/boltdb/bolt"
 	"github.com/dustin/go-wikiparse"
-	// "github.com/arnauddri/algorithms/data-structures/graph"
 	"github.com/alixaxel/pagerank"
 	"rosettacode/dijkstra" // See RosettaCode, I cannot take credit for this package.
-	// "sync"
-	// "testing"
+	"encoding/gob"
 )
 
 type SuccessorPr map[string][]byte
@@ -61,9 +57,18 @@ type PageItems struct {
 	Weight uint8
 
 	// Links from this article, used to collect them for the MySQL Db, after that the program will use them to utilize the Db for Dijkstra's algorithm and the Pagerank algorithm.
-	Links []string
+	Links string
 
 	Pageranks map[uint8]SuccessorPr
+}
+type BoltDBContent struct {
+	Sections map[string]string
+	Links string
+}
+type BoltDBInput struct {
+	Title []byte
+	Links []byte
+	Sections []byte
 }
 
 func main() {
@@ -75,14 +80,33 @@ func main() {
 
 	defer recover()
 	dumpFiles, err := GetFilesFromArticlesDir()
+	if err != nil { panic(err) }
+	// fmt.Println(dumpFiles)
+	var articlesDb *bolt.DB
+	var articlesTx *bolt.Tx
+	var cnt uint16 = 0
+	articlesDb, err = bolt.Open("/run/media/naamik/Data/wiki.boltdb", 0666, nil)
+	if err != nil { panic(err) }
+	// articlesDb.AllocSize = int(allocSize * 6)
+	articlesTx, err = articlesDb.Begin(true)
+	// enc := gob.Encoder(&string)
 	if err != nil {
+		fmt.Println("articlesDb.Begin() error")
 		panic(err)
 	}
-	// fmt.Println(dumpFiles)
+	var size uint = 0
+	var contentBuffer bytes.Buffer
+	var titleBuffer bytes.Buffer
+	contentEncoder := gob.NewEncoder(&contentBuffer)
+	titleEncoder := gob.NewEncoder(&titleBuffer)
 	for _, file := range dumpFiles {
+		articlesTx, err = articlesDb.Begin(true)
+		articles := make(map[string][]byte)
+		
 		fmt.Println("Reading", file)
 		// fmt.Println(file)
 		ioReader, allocSize, err := DecompressBZip(file)
+		// articlesTx.DB().AllocSize = int(float64(allocSize) * 6)
 		if err != nil {
 			fmt.Println("ioReader, DecompressBZip error")
 			panic(err)
@@ -92,35 +116,8 @@ func main() {
 			fmt.Println("wikiParser, wikiparser.NewParser error")
 			panic(err)
 		}
-		// fmt.Println("Read", file)
-		articlesDb, err := bolt.Open("D:/Documents/articles.boltdb", 0666, nil)
-		if err != nil {
-			fmt.Println("articlesDb, bolt.Open error")
-			panic(err)
-		}
-		articlesDb.AllocSize = int(allocSize * 6)
-		/* articlesTx, err = articlesDb.Begin(true)
-		if err != nil { fmt.Println("articlesDb.Begin() error"); panic(err) } */
-		graphDb, err := bolt.Open("D:/Documents/graph+pagerank.boltdb", 0666, nil)
-		if err != nil {
-			fmt.Println("graphDb, bolt.Open error")
-			panic(err)
-		}
-		graphDb.AllocSize = int(float64(allocSize) * 1.5)
-		/* articlesTx, err = graphDb.Begin(true)
-		if err != nil { fmt.Println("graphDb.Begin() error"); panic(err) } */
+		// offset := strings.Index(file, ".xml")
 		for err == nil {
-			articlesTx, err := articlesDb.Begin(true)
-			if err != nil {
-				fmt.Println("articlesDb.Begin() error")
-				panic(err)
-			}
-			graphTx, err := graphDb.Begin(true)
-			if err != nil {
-				fmt.Println("graphDb.Begin() error")
-				panic(err)
-			}
-			articles := make(map[string]PageItems)
 			page, err := wikiParser.Next()
 			if err != nil {
 				if strings.EqualFold(err.Error(), "EOF") {
@@ -129,69 +126,55 @@ func main() {
 				} else {
 					fmt.Println("wikiParser.Next() error != EOF")
 					continue
-				} /* panic(err) */
+				}
 			}
-			articles[page.Title], err = ReadWikiXML(*page)
-			if err != nil {
-				fmt.Println(err.Error())
-				break
+			// articles[page.Title], err = ReadWikiXML(*page)
+			// title, err := enc.Encode(page.Title)
+			err = ReadWikiXML(*encoder, *page)
+			if err != nil { panic(err) }
+			size += uint(len(articles[page.Title]))
+		}
+		// articlesTx.AllocSize = size
+		if err := BoltInsertArticles(articlesTx, title, content); err != nil {
+			fmt.Println("BoltInsertArticles error")
+			panic(err)
+		}
+		/* cnt++
+			if cnt == 1000 {
+				if err := BoltInsertArticles(articlesTx, articles, -1); err != nil {
+					fmt.Println("BoltInsertArticles error")
+					panic(err)
+				}
+				articles = nil
+				articles = make(map[string]PageItems)
+				cnt = 0
+				articlesTx.Commit()
+				articlesTx, err = articlesDb.Begin(true)
 			}
-			// fmt.Println("inserting into bolt db's")
-
-			// if err := articlesDb.Update(func(articlesTx *bolt.Tx) error {
-			if err := BoltInsertArticles( /* articlesDb, */ articlesTx, articles, -1); err != nil {
+			// fmt.Println("put in", page.Title)
+		}
+		if cnt > 0 {
+			if err := BoltInsertArticles(articlesTx, articles, -1); err != nil {
 				fmt.Println("BoltInsertArticles error")
 				panic(err)
 			}
-			// return nil
-			// }); err != nil { fmt.Println("BoltInsertArticles error:", err); panic(err) }
-			// if err = graphDb.Update(func(graphTx *bolt.Tx) error {
-			if err := BoltInsertVertices( /* graphDb, */ graphTx, articles, -1); err != nil {
-				fmt.Println("BoltInsertVertices error")
-				panic(err)
-			}
-			// return nil
-			// }); err != nil { fmt.Println("BoltInsertVertices error"); panic(err) }
 			articles = nil
-		}
-		// go runtime.GC()
-		fmt.Println("Appended", file)
-		articlesDb.Close()
-		graphDb.Close()
+			articles = make(map[string]PageItems)
+			cnt = 0
+			articlesTx.Commit()
+			articlesTx, err = articlesDb.Begin(true)
+		} */
+		articles = nil
+		articles = make(map[string][]byte)
+		articlesTx.Commit()
 	}
-
-	/* if *base {
-	baseFile, err := os.Open("bases.txt")
-	if err != nil { panic(err) }
-	fileReader := bufio.NewReader(baseFile)
-	for err == nil {
-		baseArticle, _, err := fileReader.ReadLine()
-		if err != nil { panic(err) }
-		// wikiGraph, err := BoltGetGraph(string(baseArticle))
-		if err != nil { panic(err) }
-		articles, err := BoltGetArticles(string(baseArticle))
-		if err != nil { panic(err) }
-		articles, err = BoltGetChildren(string(baseArticle), articles)
-		if err != nil { panic(err) }
-		articlesPr, err := PagerankGraph(string(baseArticle), articles[string(baseArticle)].Pageranks)
-		if err != nil { panic(err) }
-		for depth, item := range articlesPr {
-			articles[string(baseArticle)].Pageranks[depth] = item
-		}
-		if err := BoltInsertPagerank(articles); err != nil { panic(err) }
-		err = WriteTxt(articles)
-		if err != nil { panic(err) }
-	} */
-	// Then use the "link" flag to execute the dijkstra function from each created base from earlier. The top ranking shared pages with a max distance of 7 from bases should be returned as well.
-	// Use the WriteTxt function for
+	articlesDb.Close()
 }
 
-// Read all names of Bzipped Wikimedia XML files from "articles" dir.
+	// Read all names of Bzipped Wikimedia XML files from "articles" dir.
 func GetFilesFromArticlesDir() (files []string, err error) {
-	osFileInfo, err := ioutil.ReadDir("articles")
-	if err != nil {
-		return nil, err
-	}
+	osFileInfo, err := ioutil.ReadDir("/run/media/naamik/Data/articles")
+	if err != nil { return nil, err }
 	for _, fileInfo := range osFileInfo {
 		if !fileInfo.IsDir() {
 			files = append(files, fileInfo.Name())
@@ -202,34 +185,34 @@ func GetFilesFromArticlesDir() (files []string, err error) {
 
 // uses os.Open to make an io.Reader from bzip2.NewReader(os.File) to read wikipedia xml file
 func DecompressBZip(file string) (ioReader io.Reader, fileSize int64, err error) {
-	osFile, err := os.Open("D:/Documents/articles/" + file)
-	if err != nil {
-		return nil, -1, err
-	}
+	osFile, err := os.Open("/run/media/naamik/Data/articles/" + file)
+	if err != nil { return nil, -1, err }
 	fileStat, err := osFile.Stat()
-	if err != nil {
-		return nil, fileStat.Size(), err
-	}
+	if err != nil { return nil, fileStat.Size(), err }
 	ioReader = bzip2.NewReader(osFile)
 	return ioReader, fileStat.Size(), nil
 }
 
 // Reads Wikipedia articles from a Wikimedia XML dump bzip file, return the Article with titles as map keys and PageItems (Links, Sections and Text) as items - Also add Section "See Also"
-func ReadWikiXML(page wikiparse.Page) (pageItems PageItems, err error) {
+func ReadWikiXML(titleEncoder, contentEncoder gob.Encoder, page wikiparse.Page) (err error) {
+	var pageItems BoltDBContent
 	for i := 0; i < len(page.Revisions); i++ {
 		// if text is not nil then add to articles text and sections to articles
 		if page.Revisions[i].Text != "" {
 			pageItems.Sections = make(map[string]string)
 			pageItems.Sections, err = GetSections(page.Revisions[i].Text, page.Title)
-			if err != nil {
-				return pageItems, err
+			if err != nil { return err }
+			links := wikiparse.FindLinks(page.Revisions[i].Text)
+			for num, link := range links {
+				pageItems.Links += link
+				if num < len(pageItems.Links) { pageItems.Links += "-" }
 			}
-			pageItems.Links = wikiparse.FindLinks(page.Revisions[i].Text)
-			if err != nil {
-				return pageItems, err
-			}
-			pageItems.NodeID = []byte(strconv.Itoa(int(page.Revisions[i].ID)))
+
+			if err != nil { return err }
+			// pageItems.NodeID = []byte(strconv.Itoa(int(page.Revisions[i].ID)))
 		}
+		contentEncoder.Encode(BoltDBContent{pageItems.Sections, pageItems.Links})
+		titleEncoder.Encode(page.Title)
 	}
 	return
 }
@@ -239,222 +222,144 @@ func GetSections(page, title string) (sections map[string]string, err error) {
 	sections = make(map[string]string)
 	// Make a regexp search object for section titles
 	re, err := regexp.Compile("[=]{2,5}.{1,50}[=]{2,5}")
-	if err != nil {
-		return
-	}
-	// fmt.Println(title + "\n" + page)
+	if err != nil { return }
 	index := re.FindAllStringIndex(page, -1)
-	// return nil, errors.New("page's index is 0") ?
-	// if len(index) == 0 { return nil, errors.New("page's index is 0") }
-	// Look at how regex exactly does this
-	/* if strings.EqualFold(strings.ToLower(title), "southern hemisphere" ) {
-		fmt.Println(index, len(page))
-		fmt.Println(page)
-	} */
 	for i := 0; i < len(index)-1; i++ {
-		// fmt.Println(len(page), index[i])
 		if index[i] != nil {
 			if i == 0 {
-				// sections["Summary"] = page[:index[i + 1][0]-1]
-				/* fmt.Println(index)
-				fmt.Println(page[:index[i][0]-1])
-				fmt.Println(page) */
 				sections["Summary"] = page[:index[i][1]-1] // Error: slice out of bounds at article "Southern Hemisphere"
 			} else if i < len(index)-1 {
 				sections[page[index[i][0]:index[i][1]]] = page[index[i][1]:index[i+1][0]] // Assume this will create an error like the "if i == 0" condition error (maybe not)
-				// sections[page[index[i][0]:index[i]]] = page[index[i]:index[i+1]]
 			} else {
 				sections[page[index[i][0]:index[i][1]]] = page[index[i][1]:len(page)] // Assume this will create an error like the "if i == 0" condition error /maybe not)
-				// sections[page[index[i]:index[i]]] = page[index[i]:len(page)]
 			}
 		}
 	}
 	return
 }
 
-func BoltInsertArticles( /* articlesDb *bolt.DB, */ articlesTx *bolt.Tx, articles map[string]PageItems, allocSize int) (err error) {
-	// articlesDb, err := bolt.Open("D:/Documents/articles.boltdb", 0666, nil)
-	// if err != nil { return err }
-	// articlesDb.AllocSize = allocSize * 6
-	/* articlesTx, err := articlesDb.Begin(true)
-	if err != nil { return err } */
-	// if err := articlesDb.Update(func(articlesTx *bolt.Tx) error {
+/* func BoltInsertArticles(articlesTx *bolt.Tx, articles map[string]PageItems, allocSize int) (err error) {
+	var links string
 	for key, _ := range articles {
-		b, err := articlesTx.CreateBucket([]byte(key))
-		if err != nil {
-			// fmt.Println("BoltInsertArticles, CreateBucketIfNotExists error:", err)
-			break
-			// if strings.EqualFold(err.Error(), "bucket already exists") { continue } else { return err } // TODO: at error management when you've updated the package go-wikiparse
-		}
-		// Puts the name of the articles sections and section content into the bolt bucket, so the TX's bucket name is the article name, and TX's bucket content's key is the article's sections, pagerank, links and so forth (see type article struct for full content).
+		if err != nil { break }
+		bucket, err := articlesTx.CreateBucketIfNotExists([]byte(key))
+		if err != nil { return err }
 		for sectionKey, sectionText := range articles[key].Sections {
-			// if sectionBucket, err = b.CreateBucket([]byte(sectionKey)); err != nil { return err }
-			if err := b.Put([]byte(sectionKey), []byte(sectionText)); err != nil {
-				// if strings.EqualFold(err.Error(), "") { continue } // TODO: at error management when you've updated the package go-wikiparse
+			if err := bucket.Put([]byte(sectionKey), []byte(sectionText)); err != nil {
 				fmt.Println("BoltInsertArticles, sections input error:", err)
 				continue
 			}
-			// fmt.Println("Appended", "\"" + key + "\"")
 		}
-		articlesTx.Commit()
-	}
-	// return nil
-	// }); err != nil {
-	// return err
-	// }
-	// if err := articlesDb.Close(); err != nil { return err }
-	return nil
-}
-func BoltInsertVertices( /* graphDb *bolt.DB, */ graphTx *bolt.Tx, articles map[string]PageItems, allocSize int) (err error) {
-	// graphDb, err := bolt.Open("D:/Documents/graph+pagerank.boltdb", 0666, nil)
-	// if err != nil { return err }
-	/* graphTx, err := graphDb.Begin(true)
-	if err != nil { return err } */
-	var links string
-	// if err = graphDb.Update(func(graphTx *bolt.Tx) error {
-	for key, _ := range articles {
-		b, err := graphTx.CreateBucketIfNotExists([]byte(key))
-		if err != nil {
-			fmt.Println("BoltInsertVertices CreateBucketIfNotExists error:", err)
+		for num, link := range articles[key].Links {
+			links = links + link
+			if num < len(articles[key].Links) { links = links + "-" }
+		}
+		if err := bucket.Put([]byte("Links"), []byte(links)); err != nil {
+			fmt.Println("BoltInsertVertices link input error:", err)
 			return err
 		}
+	}
+	// articlesTx.Commit()
+	return nil
+} */
+func BoltInsertArticles(articlesTx *bolt.Tx, articles []BoltDBInput) (err error) {
+	var buffer bytes.Buffer
+	var encoder gob.NewEncoder(&buffer)
+	for _, article := range articles {
+		if err != nil { break }
+		bucket, err := articlesTx.CreateBucketIfNotExists(article.Title)
+		if err != nil { return err }
+		bucket.Put(articles[key])
+	}
+	// articlesTx.Commit()
+	return nil
+}
+func BoltInsertVertices(graphTx *bolt.Tx, articles map[string]PageItems, allocSize int) (err error) {
+	var links string
+	for key, _ := range articles {
+		graphBucket, err := graphTx.CreateBucketIfNotExists([]byte(key)) // Creating buckets for each article makes a bottleneck in the read/write operation.
+		if err != nil { panic(err) }
 		for num, link := range articles[key].Links {
 			links = links + link
 			if num < len(articles[key].Links) {
 				links = links + "-"
 			}
 		}
-		// graphDb.AllocSize = len(links) * 256 + 10000000
 		if !strings.EqualFold(links, "") { // debugging purposes
-			// if err =
-			// _, err := b.CreateBucket([]byte("Links"))
-			// if err != nil { return err }
-			if err := b.Put([]byte("Links"), []byte(links)); err != nil {
+			if err := graphBucket.Put([]byte("Links"), []byte(links)); err != nil {
 				fmt.Println("BoltInsertVertices link input error:", err)
 				return err
 			}
 		}
-		// if _, err = b.CreateBucket([]byte("NodeID")); err != nil { return err }
-		if err := b.Put([]byte("NodeID"), []byte(articles[key].NodeID)); err != nil {
+		if err := graphBucket.Put([]byte("NodeID"), []byte(articles[key].NodeID)); err != nil {
 			fmt.Println("BoltInsertVertices nodeid input error:", err)
 			return err
 		}
-		graphTx.Commit()
 	}
-	// return nil
-	// }); err != nil { return err }
-	// if err := graphDb.Close(); err != nil { return err }
+	// graphTx.Commit()
 	return nil
 }
-func BoltInsertPagerank(articles map[string]PageItems) (err error) {
-	graphDb, err := bolt.Open("D:/Documents/graph+pagerank.boltdb", 0666, nil)
-	if err != nil {
-		return err
+// Yeah this needs to be updates to fit a better db schema,,
+/* func BoltInsertPagerank(graphTx *bolt.Tx, articles map[string]PageItems) (err error) {
+	var items []byte
+	b, err := graphTx.CreateBucketIfNotExists([]byte("Pageranks")) // Creating buckets for each article makes a bottleneck in the read/write operation.
+	if err != nil { if strings.EqualFold(err.Error(), "bucket already exists") {
+			
+		} else {
+			return err
+		}
 	}
-	/* graphTx, err := graphDb.Begin(true)
-	if err != nil { return err } */
-	if err = graphDb.Update(func(graphTx *bolt.Tx) error {
-		for key, _ := range articles {
-			b, err := graphTx.CreateBucket([]byte(key))
-			if err != nil {
-				if strings.EqualFold(err.Error(), "bucket already exists") {
-					break
-				} else {
-					return err
-				}
-			}
-			graphDb.AllocSize = 1600000000
-			for distance, successors := range articles[key].Pageranks {
-				for title, pagerank := range successors {
-					// if _, err = b.CreateBucket([]byte("pagerank-" + title + "-" + strconv.Itoa(int(distance)))); err != nil { return err }
-					if err = b.Put([]byte("pagerank-"+title+"-"+strconv.Itoa(int(distance))), pagerank); err != nil {
-						return err
-					}
-				}
+	for key, _ := range articles {
+		for distance, successors := range articles[key].Pageranks {
+			for title, pagerank := range successors {
+				items = []byte(title + "-" + string(strconv.Itoa(int(distance))) + "-" + string(pagerank))
 			}
 		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	if err = graphDb.Close(); err != nil {
-		return err
+		if err = b.Put([]byte(key), items); err != nil { return err }
 	}
 	return nil
-}
+} */
 
 // Gets graph successors, with sections
-func BoltGetArticles(request string) (articles map[string]PageItems, err error) {
-	articlesDb, err := bolt.Open("D:/Documents/articles.boltdb", 0666, nil)
-	if err != nil {
-		return nil, err
-	}
+func BoltGetArticles(articlesTx *bolt.Tx, requests []string) (articles map[string]PageItems, err error) {
 	articles = make(map[string]PageItems)
 	var tmp PageItems
-	if err = articlesDb.View(func(articlesTx *bolt.Tx) error {
+	for _, request := range requests {
 		cursor := articlesTx.Bucket([]byte(request)).Cursor()
 		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
-			switch string(key) {
-			case "NodeID":
-				tmp.NodeID = value
-			case "Links":
-				strValue := strings.Split(string(value), "-")
-				tmp.Links = strValue
-			default:
-				tmp.Sections[string(key)] = string(value)
-			}
+			tmp.Sections[string(key)] = string(value)
 		}
 		articles[request] = tmp
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	if err = articlesDb.Close(); err != nil {
-		return nil, err
 	}
 	return articles, nil
 }
-func BoltGetChildren(rootTitle string, root map[string]PageItems) (map[string]PageItems, error) {
-	articlesDb, err := bolt.Open("D:/Documents/articles.boltdb", 0666, nil)
-	if err != nil {
-		return nil, err
-	}
-	/* articlesTx, err := articlesDb.Begin(false)
-	if err != nil { return nil, err } */
-	if err = articlesDb.View(func(articlesTx *bolt.Tx) error {
-		for _, rootLink := range root[rootTitle].Links {
-			oneLinks := strings.Split(string(articlesTx.Bucket([]byte(rootLink)).Get([]byte("Links"))), "-")
-			root[rootTitle].Pageranks[0] = SuccessorPr{rootLink: nil}
-			for _, oneLink := range oneLinks {
-				twoLinks := strings.Split(string(articlesTx.Bucket([]byte(oneLink)).Get([]byte("Links"))), "-")
-				root[rootLink].Pageranks[1] = SuccessorPr{oneLink: nil}
-				for _, twoLink := range twoLinks {
-					threeLinks := strings.Split(string(articlesTx.Bucket([]byte(twoLink)).Get([]byte("Links"))), "-")
-					root[rootLink].Pageranks[2] = SuccessorPr{twoLink: nil}
-					for _, threeLink := range threeLinks {
-						fourLinks := strings.Split(string(articlesTx.Bucket([]byte(threeLink)).Get([]byte("Links"))), "-")
-						root[rootLink].Pageranks[3] = SuccessorPr{threeLink: nil}
-						for _, fourLink := range fourLinks {
-							fiveLinks := strings.Split(string(articlesTx.Bucket([]byte(fourLink)).Get([]byte("Links"))), "-")
-							root[rootLink].Pageranks[4] = SuccessorPr{fourLink: nil}
-							for _, fiveLink := range fiveLinks {
-								sixLinks := strings.Split(string(articlesTx.Bucket([]byte(fiveLink)).Get([]byte("Links"))), "-")
-								root[rootLink].Pageranks[5] = SuccessorPr{fiveLink: nil}
-								for _, sixLink := range sixLinks {
-									root[rootLink].Pageranks[6] = SuccessorPr{sixLink: nil}
-								}
+func BoltGetChildren(articlesTx *bolt.Tx, rootTitle string, root map[string]PageItems) (map[string]PageItems, error) {
+	for _, rootLink := range root[rootTitle].Links {
+		oneLinks := strings.Split(string(articlesTx.Bucket([]byte(rootLink)).Get([]byte("Links"))), "-")
+		root[rootTitle].Pageranks[0] = SuccessorPr{rootLink: nil}
+		for _, oneLink := range oneLinks {
+			twoLinks := strings.Split(string(articlesTx.Bucket([]byte(oneLink)).Get([]byte("Links"))), "-")
+			root[rootLink].Pageranks[1] = SuccessorPr{oneLink: nil}
+			for _, twoLink := range twoLinks {
+				threeLinks := strings.Split(string(articlesTx.Bucket([]byte(twoLink)).Get([]byte("Links"))), "-")
+				root[rootLink].Pageranks[2] = SuccessorPr{twoLink: nil}
+				for _, threeLink := range threeLinks {
+					fourLinks := strings.Split(string(articlesTx.Bucket([]byte(threeLink)).Get([]byte("Links"))), "-")
+					root[rootLink].Pageranks[3] = SuccessorPr{threeLink: nil}
+					for _, fourLink := range fourLinks {
+						fiveLinks := strings.Split(string(articlesTx.Bucket([]byte(fourLink)).Get([]byte("Links"))), "-")
+						root[rootLink].Pageranks[4] = SuccessorPr{fourLink: nil}
+						for _, fiveLink := range fiveLinks {
+							sixLinks := strings.Split(string(articlesTx.Bucket([]byte(fiveLink)).Get([]byte("Links"))), "-")
+							root[rootLink].Pageranks[5] = SuccessorPr{fiveLink: nil}
+							for _, sixLink := range sixLinks {
+								root[rootLink].Pageranks[6] = SuccessorPr{sixLink: nil}
 							}
 						}
 					}
 				}
 			}
 		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	if err = articlesDb.Close(); err != nil {
-		return nil, err
 	}
 	return root, nil
 }
@@ -526,10 +431,8 @@ func BoltGetChildren(rootTitle string, root map[string]PageItems) (map[string]Pa
 	return wikiGraph, nil
 } */
 func BoltGetPagerank(request string, articles map[string]PageItems) (map[string]PageItems, error) {
-	graphDb, err := bolt.Open("D:/Documents/graph+pagerank.boltdb", 0666, nil)
-	if err != nil {
-		return nil, err
-	}
+	graphDb, err := bolt.Open("graph+pagerank.boltdb", 0666, nil)
+	if err != nil { return nil, err }
 	/* graphTx, err := graphDb.Begin(false)
 	if err != nil { return nil, err } */
 	if err = graphDb.View(func(graphTx *bolt.Tx) error {
@@ -538,9 +441,7 @@ func BoltGetPagerank(request string, articles map[string]PageItems) (map[string]
 			if strings.EqualFold(string(bKey[:8]), "pagerank") {
 				strSplit := strings.Split(string(bKey), "-")
 				depth, err := strconv.Atoi(strSplit[2])
-				if err != nil {
-					return err
-				}
+				if err != nil { return err }
 				articles[request].Pageranks[uint8(depth)] = SuccessorPr{strSplit[1]: bValue}
 			}
 		}
@@ -548,46 +449,32 @@ func BoltGetPagerank(request string, articles map[string]PageItems) (map[string]
 	}); err != nil {
 		return nil, err
 	}
-	if err = graphDb.Close(); err != nil {
-		return nil, err
-	}
+	if err = graphDb.Close(); err != nil { return nil, err }
 	return articles, nil
 }
 func PagerankGraph(title string, children map[uint8]SuccessorPr) (map[uint8]SuccessorPr, error) {
-	articlesDb, err := bolt.Open("D:/Documents/articles.boltdb", 0666, nil)
-	if err != nil {
-		return nil, err
-	}
+	articlesDb, err := bolt.Open("articles.boltdb", 0666, nil)
+	if err != nil { return nil, err }
 	articlesTx, err := articlesDb.Begin(false)
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return nil, err }
 	pagerankGraph := pagerank.NewGraph()
 	articlesTitle := make(map[string]string)
 	articlesDepth := make(map[string]uint8)
 	for depth := uint8(1); depth < uint8(7); depth += 2 {
 		for neighbor, _ := range children[depth-1] {
 			byteNeighborNodeID, err := strconv.Atoi(string(articlesTx.Bucket([]byte(neighbor)).Get([]byte("NodeID"))))
-			if err != nil {
-				return nil, err
-			}
+			if err != nil { return nil, err }
 			articlesTitle[string(byteNeighborNodeID)] = neighbor
 			articlesDepth[string(byteNeighborNodeID)] = depth - 1
 			for article, _ := range children[depth] {
 				byteArticleNodeID, err := strconv.Atoi(string(articlesTx.Bucket([]byte(article)).Get([]byte("NodeID"))))
-				if err != nil {
-					return nil, err
-				}
+				if err != nil { return nil, err }
 				articlesTitle[string(byteArticleNodeID)] = article
 				articlesDepth[string(byteArticleNodeID)] = depth
 				neighborNodeID, err := strconv.Atoi(string(byteArticleNodeID))
-				if err != nil {
-					return nil, err
-				}
+				if err != nil { return nil, err }
 				articleNodeID, err := strconv.Atoi(string(byteNeighborNodeID))
-				if err != nil {
-					return nil, err
-				}
+				if err != nil { return nil, err }
 				pagerankGraph.Link(uint32(articleNodeID), uint32(neighborNodeID), 1)
 			}
 		}
@@ -614,17 +501,12 @@ func (a SortedPageranks) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a SortedPageranks) Less(i, j int) bool { return a[i] < a[j] }
 func WriteTxt(articles map[string]PageItems) (err error) {
 	var pageranks map[string][]Pagerank
-	// fWriter := bufio.NewWriter(ioWriter)
 	for articleName, _ := range articles {
 		file, err := os.Create(articleName + ".org")
-		if err != nil {
-			return err
-		}
+		if err != nil { return err }
 		defer file.Close()
 		indexFile, err := os.Create("index-" + articleName + ".org")
-		if err != nil {
-			return err
-		}
+		if err != nil { return err }
 		defer indexFile.Close()
 		file.WriteString("* " + articleName)
 		file.WriteString("** Sections")
@@ -637,9 +519,7 @@ func WriteTxt(articles map[string]PageItems) (err error) {
 			pagerankIndex := make(map[float64]string)
 			for article, pagerank := range articles[articleName].Pageranks[depth] {
 				float64Pr, err := strconv.ParseFloat(string(pagerank), 64)
-				if err != nil {
-					return err
-				}
+				if err != nil { return err }
 				pageranks[articleName] = append(pageranks[articleName], Pagerank(float64Pr))
 				pagerankIndex[float64Pr] = article
 			}
