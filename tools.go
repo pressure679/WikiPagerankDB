@@ -1,17 +1,4 @@
 package myTools
- /* 
-		Copyright (C) 2015-2017 Vittus Mikiassen
-		This program is free software: you can redistribute it and/or modify
-		it under the terms of the GNU General Public License as published by
-		the Free Software Foundation, either version 3 of the License, or
-		(at your option) any later version.
-		This program is distributed in the hope that it will be useful,
-		but WITHOUT ANY WARRANTY; without even the implied warranty of
-		MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-		GNU General Public License for more details.
-		You should have received a copy of the GNU General Public License
-		along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
 import (
 	"io"
 	"io/ioutil"
@@ -23,7 +10,9 @@ import (
 	"encoding/xml"
 	"strings"
 	"regexp"
+	"github.com/nyxtom/viterbi"
 )
+
 type Section struct {
 	Content []byte
 	References []byte
@@ -46,19 +35,28 @@ type PageItems struct {
 
 	Index []byte
 }
-type Tag string
-type Word string
-// type Occurence uint
-// type Probability float64
-type MarkovChainEntities struct {
-	Word string
-	Tag WordTag
-	tmpOccurence uint // This is stored as constOccurence when the amount is determined.
+
+// These cross-reference each other for input/output correlation.
+type Tokens [][3]string
+type TokenChains struct {
+	Chains Tokens 
 }
-type HMMEntities struct {
-	Tags [3]string
-	tmpTagByTagOccurence uint
+// From: irc, freenode, #go-nuts, user: pestle, snippet: https://play.golang.org/p/F4ACtG_6cP, modified a bit.
+func (tc TokenChains) SortTokens() {
+	for num, _ := range tc {
+		sort.Slice(tc[num], func(i, j int) bool {
+			for k := 0; k < 3; k++ {
+				// This was not needed in my code.
+				if data[i][k] == data[j][k] {
+					continue
+				}
+				return data[i][k] < data[j][k]
+			}
+			return false
+		})
+	}
 }
+
 func GetFilesFromArticlesDir(wikiDirectory string) (files []string, err error) {
 	osFileInfo, err := ioutil.ReadDir(wikiDirectory)
 	if err != nil { return nil, err }
@@ -166,7 +164,12 @@ func ReadWikiXML(readDirectory string, filesIndices map[string][]byte) (articles
 	return articles, links, nil
 }
 func GetSections(page, title string) (Content PageItems.Content, err error) {
-	// TODO: Depending on the hardware limits use 1 loop for both regex searches.
+	page = strings.Replace(page, "&lt", "<")
+	page = strings.Replace(page, "&gt", "<")
+	page = strings.Replace(page, "&quot", "\"")
+	page = strings.Replace(page, ";", "")
+
+	// TODO: Depending on the hardware limits/utilization use 1 loop for both regex searches.
 	var lastRefIndex uint // TODO: If a lastRefIndex overflow error should occur increase the buffer length or algorithm to be sequential.
 	buffer := new(bytes.Buffer)
 	encoder := gob.NewEncoder(buffer)
@@ -213,17 +216,24 @@ func GetSections(page, title string) (Content PageItems.Content, err error) {
 	}
 	return
 }
+// This is implemented inside the GetSections function
+/* func StripXMLEntities(articles map[string]PageItems) {
+	for _, article := range articles {
+	page = strings.Replace(page, "&lt", "<")
+	page = strings.Replace(page, "&gt", "<")
+	page = strings.Replace(page, "&quot", "\"")
+	page = strings.Replace(page, ";", "")
+} */
 // TODO: convert the uint item from the chains map to []byte when it is determined how many occurrences of that specific chain there are.
-func InitHMMChain() (chains map[MarkovEntities](map[MarkovChainEntities](map[MarkovChainEntities][]byte)), sortedHMMChains map[HMMEntities][]byte, err error) {
-	chains = make(map[Word](map[Tag]MarkovChain))
-	var buffer [3]MarkovEntities
-	var counter uint8 = 0
-	var max uint = 0
-	var files []string
-	sortedChain := make(map[Tag][]string)
-	var tagBuffer HMMEntities
+
+func LoadMarkovChain() (PTBTagMap map[Token]TokenChains, WordMap map[Token]TokenChains, err error) {
+	markovEntities := make(map[string]string)
 	osFileInfo, err := ioutil.ReadDir("dependency_treebank")
 	if err != nil { return nil, err }
+	var counter uint8 = 0
+	var isInMap bool = false
+	var buffer [2][3]string
+	
 	for _, file := range osFileInfo {
 		if !file.IsDir() {
 			files = append(files, file.Name())
@@ -232,6 +242,7 @@ func InitHMMChain() (chains map[MarkovEntities](map[MarkovChainEntities](map[Mar
 			defer osFile.Close()
 			bufioReader := bufio.NewReader(osFile)
 			for {
+				counter++
 				line, _, err  := bufioReader.ReadLine()
 				if err == io.EOF {
 					break
@@ -239,46 +250,34 @@ func InitHMMChain() (chains map[MarkovEntities](map[MarkovChainEntities](map[Mar
 					return nil, err
 				}
 				symbols := strings.Split(string(line), "	")
-				max++
-				if len(symbols) == 1 { continue }
-				counter++
-				buffer[counter].Word, buffer[counter].Tag = symbols[0], symbols[1]
-				if counter == 3 {
-					if !chains[buffer[0]][buffer[1]][buffer[2]] {
-						chains[buffer[0]][buffer[1]][buffer[2]] = 1
-					} else {
-						chains[buffer[0]][buffer[1]][buffer[2]]++ 
-					}
-					counter = 0
-				}
-				buffer
+				buffer[0] = append(buffer[0], symbols[0])
+				buffer[1] = append(buffer[1], symbols[1])
+			}
+			for i := 0; i < len(buffer[0]) - 3; i++ {
+				PTBTagMap[buffer[1]].Chains = append(PTBTagMap[buffer[1]].Chains, buffer[0][i])
+				PTBTagMap[buffer[1]].Chains = append(PTBTagMap[buffer[1]].Chains, buffer[0][i + 1])
+				PTBTagMap[buffer[1]].Chains = append(PTBTagMap[buffer[1]].Chains, buffer[0][i + 2])
+				WordMap[buffer[0]].Chains = append(WordMap[buffer[0]].Chains, buffer[1][i])
+				WordMap[buffer[0]].Chains = append(WordMap[buffer[0]].Chains, buffer[1][i + 1])
+				WordMap[buffer[0]].Chains = append(WordMap[buffer[0]].Chains, buffer[1][i + 2])
+			}
+			for key, _ := range PTBTagMap {
+				PTBTagMap[key].SortTokens()
+			}
+			for key, _ := range PTBTagMap {
+				WordMap[key].SortTokens()
 			}
 		}
 	}
-	for _, word := range chains {
-		for _, tag := range word {
-			counter++
-			chains[word][tag].Probability = chains[word][tag].Occurence / max
-			tagBuffer.Tags[counter] = tag
-			if counter == 3 {
-				if sortedHMMChains[
-			}
-		}
-	}
-	return chains, nil
 }
-func TagArticle(articles []string) (err error) {
+func Produce(articles []string) (text string, err error) {
 	indices, err := ReadWikiIndices("articles", articles)
-	if err != nil { return err }
+	if err != nil { return nil, err }
 	articles, _, err := ReadWikiXML("articles", indices)
-	if err != nil { return err }
-	HMMChain, err := InitHMMChain()
+	if err != nil { return nil, err }
+	PTBTagMap, WordMap,  err := LoadMarkovChain()
+	if err != nil { return nil, err }
+	// Rake and TF-IDF and produce text between input/output texts based on pageranked (Pagerank will have to wait until I have the necessary hardware to build the database, or if alixaxel's pagerank package gets modified to store nodes in gob format) input.
 	
 }
-/* 
-TODO: when the final text has to be written, replace the xml entities with the actual textual entities
-page = strings.Replace(page, "&lt", "<")
-page = strings.Replace(page, "&gt", "<")
-page = strings.Replace(page, "&quot", "\"")
-page = strings.Replace(page, ";", "")
-*/
+
