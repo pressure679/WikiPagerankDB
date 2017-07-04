@@ -11,11 +11,14 @@ import (
 	"strings"
 	"regexp"
 	"github.com/nyxtom/viterbi"
+	"github.com/Obaied/rake"
+	"github.com/jbrukh/bayesian"
 )
 
 type Section struct {
 	Content []byte
 	References []byte
+	RakeCands *[]string
 }
 type LeafPR map[string][]byte
 type PageItems struct {
@@ -39,7 +42,7 @@ type PageItems struct {
 // These cross-reference each other for input/output correlation.
 type Tokens [][3]string
 type TokenChains struct {
-	Chains Tokens 
+	Chains Tokens
 }
 // From: irc, freenode, #go-nuts, user: pestle, snippet: https://play.golang.org/p/F4ACtG_6cP, modified a bit.
 func (tc TokenChains) SortTokens() {
@@ -163,7 +166,7 @@ func ReadWikiXML(readDirectory string, filesIndices map[string][]byte) (articles
 	}
 	return articles, links, nil
 }
-func GetSections(page, title string) (Content PageItems.Content, err error) {
+func GetSections(page, title string) (Content PageItems, err error) {
 	page = strings.Replace(page, "&lt", "<")
 	page = strings.Replace(page, "&gt", "<")
 	page = strings.Replace(page, "&quot", "\"")
@@ -182,16 +185,16 @@ func GetSections(page, title string) (Content PageItems.Content, err error) {
 			if i > 0 {
 				if refIndex[i][1] - 1 == refIndex[i - 1][0] - 1 {
 					encoder.Encode([]byte(page[:refIndex[i][1]-1]))
-					Content.References[[]byte(strconv.Itoa(refIndex[i][0] - 1))] = buffer.Bytes()
+					Content.Sections[[]byte(strconv.Itoa(refIndex[i][0] - 1))].References = buffer.Bytes()
 				} else {
 					lastRefIndex = refIndex[i][0]
 					encoder.Encode([]byte(page[:refIndex[i][1]-1]))
-					Content.References[[]byte(strconv.Itoa(refIndex[i][0] - 1))] = buffer.Bytes()
+					Content.Sections[[]byte(strconv.Itoa(refIndex[i][0] - 1))].References = buffer.Bytes()
 				}
 			} else {
 				// TODO: Might want to exchange i with 0.
 				encoder.Encode([]byte(page[:refIndex[i][1]-1]))
-				Content.References[[]byte(strconv.Itoa(refIndex[i][0] - 1))] = buffer.Bytes()
+				Content.Sections[[]byte(strconv.Itoa(refIndex[i][0] - 1))].References = buffer.Bytes()
 			}
 			page[refIndex[i][0] - 1:refIndex[i][1] - 1] = ""
 		}
@@ -226,7 +229,7 @@ func GetSections(page, title string) (Content PageItems.Content, err error) {
 } */
 // TODO: convert the uint item from the chains map to []byte when it is determined how many occurrences of that specific chain there are.
 
-func LoadMarkovChain() (PTBTagMap map[Token]TokenChains, WordMap map[Token]TokenChains, err error) {
+func LoadMarkovChain() (PTBTagMap map[string]TokenChains, WordMap map[string]TokenChains, err error) {
 	markovEntities := make(map[string]string)
 	osFileInfo, err := ioutil.ReadDir("dependency_treebank")
 	if err != nil { return nil, err }
@@ -247,7 +250,7 @@ func LoadMarkovChain() (PTBTagMap map[Token]TokenChains, WordMap map[Token]Token
 				if err == io.EOF {
 					break
 				} else if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				symbols := strings.Split(string(line), "	")
 				buffer[0] = append(buffer[0], symbols[0])
@@ -269,15 +272,28 @@ func LoadMarkovChain() (PTBTagMap map[Token]TokenChains, WordMap map[Token]Token
 			}
 		}
 	}
+	return PTBTagMap, WordMap, nil
 }
-func Produce(articles []string) (text string, err error) {
+func NLP(articles map[string]PageItems) (text string, err error) {
 	indices, err := ReadWikiIndices("articles", articles)
 	if err != nil { return nil, err }
 	articles, _, err := ReadWikiXML("articles", indices)
 	if err != nil { return nil, err }
 	PTBTagMap, WordMap,  err := LoadMarkovChain()
 	if err != nil { return nil, err }
-	// Rake and TF-IDF and produce text between input/output texts based on pageranked (Pagerank will have to wait until I have the necessary hardware to build the database, or if alixaxel's pagerank package gets modified to store nodes in gob format) input.
-	
+	// Rake and TF-IDF and produce text between input/output texts based on pageranked input.
+	/* const badTags []string = []string{"NN", "PRP", "WP", "EX"}
+	const NonWord []string = []string{ }
+	var badWords []string
+	for absBadTag := range badTags {
+		for _, absBadWord := range PTBTagMap[absBadWord].Chains {
+			badWords = append(badWords, absBadWord[0])
+		}
+	} */
+	for key, item := range articles {
+		for _, sectionTitle := range item.Sections {
+			*articles[key].Sections[sectionTitle].RakeCands = rake.RunRake(articles[key].Sections[sectionTitle].Content)
+		}
+	}
 }
 
