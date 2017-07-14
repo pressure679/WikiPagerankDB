@@ -1,21 +1,3 @@
-/*
-	 This is basically just an API for reading a wikipedia dump from https://dumps.wikimedia.org/enwiki/,
-	 the search engine/database will be created with elasticsearch or bleve. - apart from go-wikiparse this has the GetSections method.
-		Copyright (C) 2015-2017 Vittus Mikiassen
-
-		This program is free software: you can redistribute it and/or modify
-		it under the terms of the GNU General Public License as published by
-		the Free Software Foundation, either version 3 of the License, or
-		(at your option) any later version.
-
-		This program is distributed in the hope that it will be useful,
-		but WITHOUT ANY WARRANTY; without even the implied warranty of
-		MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-		GNU General Public License for more details.
-
-		You should have received a copy of the GNU General Public License
-		along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
 // The Wikipedia articles can be downloaded at https://dumps.wikimedia.org/enwiki/latest/
 // Package main provides ...
 
