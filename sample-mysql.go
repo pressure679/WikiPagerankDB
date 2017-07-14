@@ -68,7 +68,7 @@ func main() {
 
 	db, err := sql.Open(
 		"mysql",
-		"root:glvimia7@tcp(localhost:3306)/wiki")
+		"<username>:<password>@tcp(localhost:3306)/wiki")
 	if err != nil { panic(err) }
 
 	// I do not think my OS supports the Prepare method, so execute directly, gobyexample says it does not matter anyway.
