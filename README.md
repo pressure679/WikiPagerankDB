@@ -1,30 +1,37 @@
 # WikiPagerankDB
 
-# sample-boltdb.go
+## sample-boltdb.go
 On Linux use the commands:
+
 go get github.com/pressure679/WikiPagerankDB
+
 go build $GOPATH/src/github.com/pressure679/WikiPagerankDB/sample-boltdb.go
+
 cd $GOPATH/src/github.com/pressure679/WikiPagerankDB/
+
 mkdir articles
+
 cd articles
 
 And depending on your machine (PC I recomment downloading the ~200MB-~2GB files, a 60+GB RAM/VRAM machine the single data dump is fine). Type the url https://dumps.wikimedia.org/enwiki/ into a webbrowser's URL input line, and a list of wikipedia data dump distributions should come up. Select the one you want.
 
 wget https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles...
+
 cd ..
+
 ./sample-boltdb
 
 This is going to take some days, almost a week, with ~4GB RAM, ~2.4 GHz CPU, but do not worry about shutting down the PC, you can move the already used wikipedia dump files away from the directory and let the program continue from where it left off.
 
-# sample-mysql.go
+## sample-mysql.go
 For this I recommend the mwdumper, see https://www.mediawiki.org/wiki/Manual:MWDumper
 This I tested for ~20 minutes before I saw it only added ~50 articles, then I figured I used a base MySQL schema and decidede to make my own index of wikipedia and just use the raw xml files. (although MySQL or a custom compression or encoding would be nice).
 For this install mysql and add a database named wikidb, then add your mysql username and password into the <username> and <password> field on line 71.
 
-# Description
+### Description of samples
 sample-boltdb and sample-mysql run, and the same functionality of these are in tools.go but with the modification of making an index instead of the boltdb and/or mysql functionality.
 
-# tools.go
+## tools.go
 This contains a HMM tagger using the viterbi algorithm, although the ratio of occurrence of each markov chain (trigram of sentences) is not added (ratio is for perceptron usage).
 
 TODO: the NLP function and TagArticle function, then a P2P network with a server of existing peers.
