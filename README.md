@@ -1,13 +1,16 @@
 # Note
 
 As of now I have:
-- swapped between keeping an index in RAM, or writing it to a more persistent storage
-- compute markov chains of sentences
-- tag the content (english text) for their POS (Part-Of-Speech) as defined by a brill tagger (see github.com/mvryan/fasttag)
-- train a markov chain on the penn treebank by Python's NLTK data (see http://www.nltk.org/nltk_data/ #18)
-- extract nouns and count their frequency in a document
-- pagerank some articles based on links
-- I have also swapped the heading of the project from mysql, github.com/boltdb/bolt, to gzipping, zipping, and pure text.
+- Swapped between keeping an index in RAM, or writing it to a more persistent storage
+- Compute markov chains of sentences
+- Tag the content (english text) for their POS (Part-Of-Speech) as defined by a brill tagger (see github.com/mvryan/fasttag)
+- Train a markov chain on the penn treebank by Python's NLTK data (see http://www.nltk.org/nltk_data/ #18)
+- Extract nouns and count their frequency in a document
+- Pagerank some articles based on links
+- Swapped the heading of the project from mysql, github.com/boltdb/bolt, to gzipping, zipping, flating, and pure text - also considered lzma, but that was not in the golang's std lib.
+- Considered github.com/google/readahead for bulk RAM access of entire wikipedia, but that was too inefficient over indexing.
+
+The heading now would be to use the IndexWiki for persistent storage (on a PC - 4GB RAM, > 100 GB drive, 2Ghz CPU) and read the indexes based on some score, term frequency needs implementation, of the links, references, titles, pages, or some other lexicon feature such as aiml.
 
 Do what you want with it.
 
