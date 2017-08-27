@@ -1,3 +1,16 @@
+# Note
+
+As of now I have:
+- swapped between keeping an index in RAM, or writing it to a more persistent storage
+- compute markov chains of sentences
+- tag the content (english text) for their POS (Part-Of-Speech) as defined by a brill tagger (see github.com/mvryan/fasttag)
+- train a markov chain on the penn treebank by Python's NLTK data (see http://www.nltk.org/nltk_data/ #18)
+- extract nouns and count their frequency in a document
+- pagerank some articles based on links
+- I have also swapped the heading of the project from mysql, github.com/boltdb/bolt, to gzipping, zipping, and pure text.
+
+Do what you want with it.
+
 # WikiPagerankDB
 
 ## sample-boltdb.go
