@@ -3,8 +3,6 @@ package GhostWriter
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
-	"encoding/xml"
 	"flag"
 	"fmt"
 	"io"
@@ -14,53 +12,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
-	"github.com/mvryan/fasttag"
 	"archive/zip"
+	"compress/bzip2"
+	"compress/gzip"
+	"github.com/mvryan/fasttag"
+	"github.com/Obaied/rake"
+	// "github.com/gen2brain/go-unarr"
+	// "github.com/alixaxel/pagerank"
+	// "github.com/jbrukh/bayesian"
+	// "github.com/neurosnap/sentences"
+	// _ "github.com/go-sql-driver/mysql"
+	// "database/sql"
+	// "golang.org/x/text/search"
+	// "legacy/rosettacode/dijkstra"
 )
-
-// Graciously open sourced by github.com/dustin/go-wikiparse under an MIT styled license (10TH of July 2017).
-type MWSiteInfo struct {
-	SiteName   string `xml:"sitename"`
-	Base       string `xml:"base"`
-	Generator  string `xml:"generator"`
-	Case       string `xml:"case"`
-	Namespaces []struct {
-		Key   string `xml:"key,attr"`
-		Case  string `xml:"case,attr"`
-		Value string `xml:",chardata"`
-	} `xml:"namespaces>namespace"`
-}
-
-// A Contributor is a user who contributed a revision.
-type MWContributor struct {
-	ID       uint64 `xml:"id"`
-	Username string `xml:"username"`
-}
-
-// A Redirect to another Page.
-type MWRedirect struct {
-	Title string `xml:"title,attr"`
-}
-
-// A Revision to a page.
-type MWRevision struct {
-	ID          uint64      `xml:"id"`
-	Timestamp   string      `xml:"timestamp"`
-	Contributor MWContributor `xml:"contributor"`
-	Comment     string      `xml:"comment"`
-	Text        string      `xml:"text"`
-}
-
-// A Page in the wiki.
-type MWPage struct {
-	Title     string     `xml:"title"`
-	ID        uint64     `xml:"id"`
-	Redir     Redirect   `xml:"redirect"`
-	Revisions []MWRevision `xml:"revision"`
-	Ns        uint64     `xml:"ns"`
-}
-
 type SEBadge struct {
 	AttrClass string `xml:" Class,attr"  json:",omitempty"`
 	AttrDate string `xml:" Date,attr"  json:",omitempty"`
@@ -97,7 +62,7 @@ type SEPostHistory struct {
 	AttrUserDisplayName string `xml:" UserDisplayName,attr"  json:",omitempty"`
 	AttrUserId string `xml:" UserId,attr"  json:",omitempty"`
 }
-type PostHistories struct {
+type SEPostHistories struct {
 	ChiRow []*PostHistory `xml:" row,omitempty" json:"row,omitempty"`
 }
 
@@ -108,7 +73,7 @@ type SEPostLink struct {
 	AttrPostId string `xml:" PostId,attr"  json:",omitempty"`
 	AttrRelatedPostId string `xml:" RelatedPostId,attr"  json:",omitempty"`
 }
-type PostLinks struct {
+type SEPostLinks struct {
 	ChiRow []*SEPostLink `xml:" row,omitempty" json:"row,omitempty"`
 }
 
@@ -169,431 +134,344 @@ type SEUsers struct {
 	ChiRow []*SEUser `xml:" row,omitempty" json:"row,omitempty"`
 }
 
-type Buffer bytes.Buffer
+// Graciously open sourced by github.com/dustin/go-wikiparse under an MIT styled license (10TH of July 2017).
+type MWSiteInfo struct {
+	SiteName   string `xml:"sitename"`
+	Base       string `xml:"base"`
+	Generator  string `xml:"generator"`
+	Case       string `xml:"case"`
+	Namespaces []struct {
+		Key   string `xml:"key,attr"`
+		Case  string `xml:"case,attr"`
+		Value string `xml:",chardata"`
+	} `xml:"namespaces>namespace"`
+}
+
+// A Contributor is a user who contributed a revision.
+type MWContributor struct {
+	ID       uint64 `xml:"id"`
+	Username string `xml:"username"`
+}
+
+// A Redirect to another Page.
+type MWRedirect struct {
+	Title string `xml:"title,attr"`
+}
+
+// A Revision to a page.
+type MWRevision struct {
+	ID          uint64      `xml:"id"`
+	Timestamp   string      `xml:"timestamp"`
+	Contributor MWContributor `xml:"contributor"`
+	Comment     string      `xml:"comment"`
+	Text        string      `xml:"text"`
+}
+
+// A Page in the wiki.
+type MWPage struct {
+	Title     string     `xml:"title"`
+	ID        uint64     `xml:"id"`
+	Redir     Redirect   `xml:"redirect"`
+	Revisions []MWRevision `xml:"revision"`
+	Ns        uint64     `xml:"ns"`
+}
+
+type Chain struct {
+	IndexNearestReferences [2][2]bytes.Buffer
+	NGram []bytes.Buffer
+}
 type Section struct {
-	Content    Buffer
-	References Buffer
-	// RakeCands  map[string]Buffer
+	Content bytes.Buffer
+	References []bytes.Buffer
+	Links []bytes.Buffer
+	TopNouns [10][2]bytes.Buffer
+	XKeyChain map[string]Chain
 }
-// type LeafPR map[string]Buffer
-type PageItems struct {
+type Page struct {
+	// Content    bytes.Buffer
+	Offset bytes.Buffer
+	ID bytes.Buffer
 	Sections map[string]Section
-
-	// NodeID Buffer
-
-	// Weight Buffer
-
-	// Links Buffer
-
-	// Pageranks map[uint8]LeafPRmI
-
-	// Index Buffer
-
-	// Synchronizer sync.Mutex
+}
+type Articles struct {
+	Title bytes.Buffer
+	Offset bytes.Buffer
 }
 
-/* type Compressor struct {
-	Mutex sync.Mutex
-	cBuffer Buffer
-	GzipWriter gzip.Writer
-	GzipReader gzip.Reader
-} */
-
-/* type Index struct {
-	Map map[string][]byte
-} */
-type MarkovChain struct {
-	Tokens     [3]string
-	TokenRatio int32
-}
-type MarkovChains []MarkovChain
-func (mcs MarkovChains) Sort() {
-	for num, _ := range mcs {
-		sort.Slice(mcs[num], func(j int, i int) bool {
-			if mcs[j].TokenRatio == mcs[i].TokenRatio {
-				continue
-			}
-			return mcs[j].TokenRatio < mcs[i].TokenRatio
-		})
-	}
-}
-
-func GetFilesFromArticlesDir(wikiDirectory string) (files []string, err error) {
-	osFileInfo, err := ioutil.ReadDir(wikiDirectory)
+// Read all names of Bzipped Wikimedia XML files from "articles" dir.
+func GetFilesFromArticlesDir(directory *string) (files []string, err error) {
+	osFileInfo, err := ioutil.ReadDir("/run/media/naamik/Data/articles")
 	if err != nil { return nil, err }
-	for number, _ := range osFileInfo {
-		if !osFileInfo[number].IsDir() {
+	for _, fileInfo := range osFileInfo {
+		if !fileInfo.IsDir() {
 			files = append(files, fileInfo.Name())
 		}
 	}
 	return
 }
 
-// This part indexes the wikipedia articles, but by modifying it a little the return #1 object from a map with an array byte to a map with a map with an array byte it can contain the index and the article itself.
-func IndexWiki(content *string) (map[string][][]byte), err error) {
-	pageRE, err := regexp.Compile("<page>(.+)</page>")
-	if err != nil { return nil, err }
-	titleRE, err := regexp.Compile("<title>(.+)</title>")
-	if err != nil { return nil, err }
-	referenceRE, err := regexp.Compile("<ref>(.+)</ref>")
-	if err != nil { return nil, err }
-	linkRE, err := regexp.Compile("[[(.+)]]")
-	if err != nil { return nil, err }
-	citeRE, err := regexp.Compile("{{cite(.+)}}")
+func DecompressBZip(directory, file *string) (ioReader io.Reader, fileSize int64, err error) {
+	osFile, err := os.Open(directory + "/" + file)
+	if err != nil { return nil, -1, err }
+	fileStat, err := osFile.Stat()
+	if err != nil { return nil, fileStat.Size(), err }
+	ioReader = bzip2.NewReader(osFile)
+	return ioReader, fileStat.Size(), nil
+}
+
+// Reads Wikipedia articles from a Wikimedia XML dump bzip file, return the Article with titles as map keys and PageItems (Links, Sections and Text) as items - Also add Section "See Also"
+func ReadWikiXML(directory, file *string) (pages map[string]Page, err error) {
+	// linkRE := regexp.MustCompile(`\[\[([^\|\]]+)`)
+	// refRE := regexp.MustCompile("<ref>(.+)</ref>")
+
+	var page MWPage
+	files, err := GetFilesFromArticlesDir()
 	if err != nil { return nil, err }
 
-	pages := pageRE.FindAllStringIndex(*content, -1)
-	titles := titleRE.FindAllStringIndex(*content, -1)
-	references := referenceRE.FindAllStringIndex(*content, -1)
-	links := linkRE.FindAllStringIndex(*content, -1)
-	cites := citeRE.FindAllStringIndex(*content, -1)
-
-	index = make(map[string][]byte)
-	for cnt, _ := range pages {
-		index[*content[pages[cnt][0]+6:pages[cnt][1]-7]] = []byte(strconv.Itoa(pages[cnt][0]) + "-" + strconv.Itoa(pages[cnt][1]))
-	}
-	for cnt, _ := range titles {
-		index[*content[titles[cnt][0]+7:titles[cnt][1]-8]] = []byte(strconv.Itoa(titles[cnt][0]) + "-" + strconv.Itoa(titles[cnt][1]))
-	}
-	for cnt, _ := range references {
-		index[*content[references[cnt][0]+5:references[cnt][1]-6]] = []byte(strconv.Itoa(references[cnt][0]) + "-" + strconv.Itoa(references[cnt][1]))
-	}
-	for cnt, _ := range links {
-		if strings.Contains(links[cnt], "|") {
-			separatorIndex := strings.Index(links[cnt], "|")
-			index[*content[links[cnt][0]+2:links[cnt][1]-3]][2:separatorIndex-1] = append(index[*content[links[cnt][0]+2:links[cnt][1]-3]][:separatorIndex-1], []byte(strconv.Itoa(links[cnt][0]) + "-" + strconv.Itoa(links[cnt][1])))
-			continue
-		}
-		index[*content[links[cnt][0]+2:links[cnt][1]-3]][2:len(links[cnt])-2] = append(index[*file][*content[links[cnt][0]+2:links[cnt][1]-3]], []byte(strconv.Itoa(links[cnt][0]) + "-" + strconv.Itoa(links[cnt][1])))
-	}
-	for cnt, _ := range cites {
-		index[*content[cites[cnt][0]+6:cites[cnt][1]-3]] = []byte(strconv.Itoa(cites[cnt][0]) + "-" + strconv.Itoa(cites[cnt][1]))
-	}
-	return index, nil
-}
-func WriteIndexZip(writeDirectory *string, indices map[string][]byte) (err error) {
-	indexFile, err := os.Create(*writeDirectory + "/index.zip")
-	if err != nil { return err }
-	zipWriter, err := zip.NewWriter(indexFile)
-	if err != nil { return err }
-	for article, index := range indices {
-		file, err := zipWriter.Create(article)
-		if err != nil { return err }
-		_, err := file.Write(index)
-	}
-	zipWriter.Flush()
-	if err = zipWriter.Close(); err != nil { return err }
-	return nil
-}
-func WriteIndex(writeDirectory *string, indices map[string][]byte) (err error) {
-	indexFile, err := os.Create(*writeDirectory + "/index.txt")
-	if err != nil { return err }
-	for elements, _ := range indices {
-		for 
-	}
-	zipWriter.Flush()
-	if err = zipWriter.Close(); err != nil { return err }
-	return nil
-}
-func ReadWikiIndices(readDirectory *string) (index map[string][]byte, err error) {
-	zipReader, err := zip.OpenReader(*readDirectory + "/index.zip")
-	article, index := strings.Split(line, "-")
-	indices[indexFile.Name()[:6]][article] = []byte(index)
-	if err = osFile.Close(); err != nil { return nil, err }
-	return index, nil
-}
-func ReadWikiXML(readDirectory *string, index map[string][]byte) (articles map[string]PageItems, err error) {
-	// var xmlDecoder *xml.Decoder
-	files, err := GetFilesFromArticlesDir(readDirectory)
-	if err != nil { return nil, nil, err }
-
-	var buffer bytes.Buffer
-	gzipWriter := gzip.NewWriter(buffer)
-	var bufferLinks string
-	articles = make(map[string]*PageItems)
-
-	reTitle, err := regexp.Compile("[=]{2,5}.{1,50}[=]{2,5}")
-	if err != nil { return nil, nil, err }
-	reReferences, err := regexp.Compile("<ref>(.+)</ref>")
-	if err != nil { return nil, nil, err }
 	var page MWPage
 
 	var section string
 	var counter uint8 = 0
 
 	for file, _ := range filesIndices {
-		ioReader, err := os.Open(readDirectory + "/" + file)
+		ioReader, err := DecompressBZip(directory, *file)
+		if err != nil { return nil, err }
 		xmlDecoder := xml.NewDecoder(ioReader)
-		if err != nil { return nil, nil, err }
-		for _, offset := range filesIndices {
-			parts := strings.Split(string(offset), "-")
-			start, err := strconv.ParseInt(parts[0], 10, 64)
-			if err != nil { return nil, nil, err }
-			_, err = ioReader.Seek(start, io.SeekStart)
-			if err != nil { return nil, nil, err }
-			for {
-				err = xmlDecoder.Decode(&page)
-				if err != nil {
-					if strings.EqualFold(err.Error(), io.EOF.Error()) {
-						break
-					} else { return nil, nil, err }
-				}
+		err = xmlDecoder.Decode(&page)
+		if err != nil { if strings.EqualFold(err.Error(), io.EOF.Error()) { break } else { return nil, err } }
+		if page.Revisions[i].Text != "" {
+			page.Revisions[i].Text = strings.Replace(page.Revisions[0].Text, "&lt", "<", -1); page.Revisions[0].Text = strings.Replace(page.Revisions[0].Text, "&gt", ">", -1); page.Revisions[0].Text = strings.Replace(page.Revisions[0].Text, "&quot", "\"", -1); page.Revisions[0].Text = strings.Replace(page.Revisions[0].Text, ";", "", -1)
+			for refNum := len(refIndex); refNum > -1; refNum-- {
+				page[title].Sections[section].References = append(page[title].Sections[section].References, page[title].Sections[section].Content[refIndex[refNum][0]:refIndex[refNum][1]])
+				page[title].Sections[section].Content[refIndex[refNum][0]:refIndex[refNum][1]] = []byte("[[r:" + strconv.Itoa(refNum) + "]]")
+			}
+			linkIndex := linkRE.FindAllStringIndex(page[title][section].Content, -1)
+			for linkNum := len(linkIndex); linkNum > -1; linkNum-- {
+				link := strings.Split(page[title][section].Content[linkIndex[linkNum][0]:refIndex[linkNum][1]], "|")[2:][0]
+				page[title].Sections[section].Links = append(page[title].Sections[section].Links, []byte(link))
+				page[title].Sections[section].Content[linkIndex[linkNum][0]:linkIndex[linkNum][1]] = []byte("[[l:" + strconv.Itoa(linkNum) + "]]")
+			}
+			pages[page.Title].GetSections(*page.Revisions[i].Text)
+			err = pages[page.Title].TagArticle()
+			if err != nil { return err }
+			pages[page.Title].Rake()
+			pages[page.Title].ID = []byte(strconvItoa(int(page.Revisions[i].ID)))
+		}
+	}
+	return
+}
+// Gets sections from a wikipedia article, page is article content, title is article title
+func (page Page) GetSections(content *string) {
+	re := regexp.MustCompile("[=]{2,5}.{1,50}[=]{2,5}")
+	if err != nil { return }
+	index := re.FindAllStringIndex(page, -1)
+	for i := 0; i < len(index)-1; i++ {
+		if index[i] != nil {
+			if i == 0 {
+				page.Sections["Summary"].Content = []byte(*content[:index[i][1]-1])
+			} else if i < len(index)-1 {
+				page.Sections[page[index[i][0]:index[i][1]]].Content = []byte(*content[index[i][1]:index[i+1][0]])
+			} else {
+				page.Sections[page[index[i][0]:index[i][1]]].Content = []byte(*content[index[i][1]:len(*content)])
+			}
+		}
+	}
+	return
+}
 
-				if page.Revisions[0].Text != "" {
-					page.Revisions[0].Text = strings.Replace(page.Revisions[0].Text, "&lt", "<", -1)
-					page.Revisions[0].Text = strings.Replace(page.Revisions[0].Text, "&gt", ">", -1)
-					page.Revisions[0].Text = strings.Replace(page.Revisions[0].Text, "&quot", "\"", -1)
-					page.Revisions[0].Text = strings.Replace(page.Revisions[0].Text, ";", "", -1)
-
-					refIndex := reReferences.FindAllStringIndex(page.Revisions[0].Text, -1)
-					titleIndex := reTitle.FindAllStringIndex(page.Revisions[0].Text, -1)
-					for i := 0; i < len(refIndex); i++ {
-						if refIndex[0] != nil {
-							if refIndex[0][0] > titleIndex[counter][0] {
-								counter++
-							}
-							_, err = gzipWriter.Write([]byte(page.Revisions[0].Text[
-								refIndex[i][0]:
-								refIndex[1+1][0]
-							]))
-							if err != nil { return nil, nil, err }
-							gzipWriter.Flush()
-							articles[page.Title].
-								Sections[section].
-								References = buffer.Bytes()
-							buffer.Reset()
-						}
-					}
-					page.Revisions[0].Text = reReferences.ReplaceAllString(page.Revisions[0].Text, "")
-					titleIndex = reTitle.FindAllStringIndex(page.Revisions[0].Text, -1)
-					for i := 0; i < len(titleIndex)-1; i++ {
-						if titleIndex[0] != nil {
-							if i == 0 {
-								_, err = gzipWriter.Write(page.Revisions[0].
-									Text[:titleIndex[0][1]-1])
-								if err != nil { return nil, nil, err }
-								gzipWriter.Flush()
-								articles[page.Title].Sections["Summary"].Content = buffer.Bytes()
-								buffer.Reset()
-							} else if i < len(titleIndex)-1 {
-								_, err = gzipWriter.Write(page.Revisions[0].
-									Text[
-									titleIndex[i][1]:
-									titleIndex[i+1][0]])
-								if err != nil { return nil, nil, err }
-								gzipWriter.Flush()
-								articles[page.Title].Sections[
-									page.Revisions[0].Text[
-										titleIndex[i][0]:
-										titleIndex[i+1][0]
-									]
-								].Content = buffer.Bytes()
-								buffer.Reset()
-							} else {
-								_, err = gzipWriter.Write(page.Revisions[0].Text[
-									titleIndex[i][1]:
-									len(page.Revisions[0].Text)])
-								if err != nil { return nil, nil, err }
-								gzipWriter.Flush()
-								articles[page.Title].Sections[
-									page.Revisions[0].Text[
-										titleIndex[i][0]:
-										titleIndex[i][1]
-									]
-								].Content = buffer.Bytes()
-								buffer.Reset()
-							}
-						}
-					}
+func BackwardStringIndex(text, substring string) (index int) {
+	for ii := 0; ii < 3; ii++ {
+		for iii := len(text); iii > 0; iii--  {
+			for iiii := 0; iiii < len(substring) - 1; iiii++ {
+				if text[len(text) - iii:len(text) - iii - 1] == substring[iiii:iiii + 1] && ii == 2 {
+					return len(text) - iii
 				}
 			}
 		}
 	}
-	if err = gzipWriter.Close(); err != nil { return nil, nil, err }
-	if err = ioReader.Close(); err != nil { return nil, nil, err }
-	return articles, links, nil
+	return -1
 }
+func (page Page) TagArticle() (err error) {
+	// ngramRE, err := regexp.Compile("(;:,.!?)\\s(\\w\\d)+(;:,.!?)\\s+(\\w\\d)+(;:,.!?)\\s(\\w\\d)+(;:,.!?)\\s")
+	// titleRE := regexp.MustCompile("[=]{2,5}.{1,50}[=]{2,5}")
+	// linkRE := regexp.MustCompile(`\[\[([^\|\]]+)`)
+	// refRE := regexp.MustCompile("<ref>(.+)</ref>")
+	var offset int = 0
+	var wordIndex int
+	var words, tags []string
+	var preSentence, sufSentence []byte = []byte(-1), []byte(-1)
+	// the sane choice here would be to load up a lexicon based tagger, but for now I let the runtime manage the package implementation type of tagging. - After all, it is word-ending based, much less memory required, and quite cheap cpu wise for a single operation.
+	for title, _ := range page {
+		for section, _ := range page[title].Sections {
+			words = fasttag.WordsToSlice(string(page[title].Sections[section]))
+			tags = fasttag.BrillTagger(words)
 
-func LoadMarkovChain() (PTBTagMap map[string]MarkovChains, WordMap map[string]MarkovChains, err error) {
-	// var buffer bytes.Buffer
-	// gzipWriter := gzip.NewWriter(&buffer)
-	osFileInfo, err := ioutil.ReadDir("dependency_treebank")
-	if err != nil { return nil, nil, err }
-	var counter uint8 = 0
-	var buffer [2][3]string
-
-	for _, file := range osFileInfo {
-		if !file.IsDir() {
-			osFile, err := os.Open("dependency_treebank/" + file.Name())
-			if err != nil { return nil, nil, err }
-			defer osFile.Close()
-			bufioReader := bufio.NewReader(osFile)
-			for {
-				line, _, err := bufioReader.ReadLine()
-				if err == io.EOF {
-					break
-				} else if err != nil { return nil, nil, err }
-				symbols := strings.Split(string(line), "	")
-				buffer[0][counter] = symbols[0]
-				buffer[1][counter] = symbols[1]
-				counter++
-
-				if counter == 3 {
-					counter = 0
-					// Keep and eye on leak with runtime/pprof on goroutines
-					go func() {
-						for i := 0; i < 3; i++ {
-							if *PTBTagMap[buffer[1][0]] {
-								*PTBTagMap[buffer[1][0]].TokenRatio++
-								continue
-							}
-							*PTBTagMap[buffer[1][0]] = append(*PTBTagMap[buffer[1]],
-								&MarkovChain{Tokens: [3]string{
-									buffer[0][i],
-									buffer[0][i+1],
-									buffer[0][i+2]},
-								},
-							)
-							*WordMap[buffer[i][0]] = append(*WordMap[buffer[i]],
-								&MarkovChain{Tokens: [3]string{
-									buffer[1][i],
-									buffer[1][i+1],
-									buffer[1][i+2]},
-								},
-							)
-						}
-					}
+			for num, word := range words {
+				wordIndex = strings.Index(text, word)
+				/* page[title].Sections[section].XKeyChain[word] = Chain{
+					Token: tags[num],
+					TokenFrequency: float64(1) / float64(len(words)),
+				} */
+				// sentenceIndex = strings.IndexAny(text[:wordIndex+len(word)+sentenceIndex], ";:,.!?")
+				// sentenceIndex = BackwardStringIndex(text[:wordIndex + len(word) + sentenceIndex], ";:,.!?")
+				preSentence = []byte(BackwardStringIndex(text[:wordIndex], ";:,.!?"))
+				// section.XKeyChain[word].Offset[0] = append(WordMap[word].NGram, text[sentenceIndex+1:wordIndex-sentenceIndex])
+				for i := 0; i < 3; i++ {
+					sufSentence = strings.IndexAny(text[
+						wordIndex +
+							len(word) +
+							strconv.Atoi(sufSentence) + 1:],
+						";:,.!?")
 				}
+				page[title].Sections[section].XKeyChain[word] = append(page[title].Sections[section], text[preSentence:sufSentence + len(word)])
 			}
 		}
-		for key, _ := range PTBTagMap {
-			go PTBTagMap[key].Sort()
-		}
-		for key, _ := range WordMap {
-			go WordMap[key].Sort()
+	}
+	break
+}
+func (page Page) Rake() {
+	for title, _ := range page {
+		for section, _ := range page[title].Sections {
+			rakeCands := rake.RunRake(string(page[title].Sections[section].Content))
+			for num, pair := range rakeCands {
+				index := strings.Index(string(page[title].Sections[section].Content), pair.Key)
+				page.Sections[section].TopNouns = append(section.TopNouns,
+					[2]bytes.Buffer{
+						[]byte(strconv.Itoa(index)),
+						[]byte(strconv.Itoa(index + len(pair.Key))),
+					},
+				)
+				if num == 9 { break }
+			}
 		}
 	}
-	return PTBTagMap, WordMap, nil
 }
 
-// TODO: brill pos tag the MarkovChains, parse the
-// example: github.com/korobool/nlp4go uses this progressive model: use a model (in my case oxford's penn tree bank and brill pos tags), train the averaged perceptron (I will use the github.com/sjwhitworth/golearn/base to parse my data into csv format), and then use the averaged perceptron to tag a text. - But for now, use github.com/kamildrazkiewicz/go-stanford-nlp
-/* func TagArticle(InputPTBTagMap map[string]*MarkovChains, articles map[string]PageItems) (PTBTagMap map[string]*MarkovChains, WordMap map[string]*MarkovChains, err error) {
-	for key, item := range articles {
-		for _, text := range articles[key].Sections {
-			words := fasttag.WordsToSlice(text)
-			for _, word := range words {
-				
-			}
-		}
-	}
-} */
-func (articles map[string]PageItems) Rake() (err error) {
-	var readBuffer bytes.Buffer
-	gzipReader := gzip.NewReader(&readBuffer)
-	var writeBuffer bytes.Buffer
-	gzipWriter := gzip.NewWriter(&writeBuffer)
-	var words []string
-
-	for key, item := range articles {
-		for _, section := range item.Sections {
-			gzipReader.Read(item.Sections[sectionTitle])
-			gzipReader.Flush()
-			rakeCands := rake.RunRake(string(buffer.Bytes()))
-			for key, val := range rakeCands {
-				gzipWriter.Write(strconv.FormatFloat(val, 'f', -1, 64))
-				gzipWriter.Flush()
-				section.RakeCands[key] = writeBuffer.Bytes()
-				writeBuffer.Reset()
-			}
-			gzipReader.Reset()
-		}
-	}
-	if err = gzipReader.Close(); err != nil { return err }
-	if err = gzipWriter.Close(); err != nil { return err }
-}
-
-// TODO
-func (pi PageItems) MakeMarkovChainModels(input string) (Trigrams map[string][][]byte err error) {
+func WriteDB(directory *string, articles map[string]Page) (err error) {
+	indexFile, err := os.OpenFile(*directory, "/" + "index.txt", os.O_APPEND, 0666)
+	if err != nil { return err }
+	defer indexFile.Close()
+	contentFile, err := os.OpenFile(*directory + "/" + "content.dat", os.O_APPEND, 0666)
+	if err != nil { return err }
+	defer contentFile.Close()
+	fileStats, err := contentFile.Stat()
+	var contentFileLength bytes.Buffer = []byte(strconv.Itoa(int(fileStats.Size())))
+	var nounNum uint8 = -1
 	var buffer bytes.Buffer
-	gzipWriter := gzip.NewWriter(&buffer)
-	POSModel := make(map[string][][3]string)
-	
+	compressor := gzip.NewWriter(&buffer)
+	for title, _ := range articles {
+		buffer.Write(articles[title].ID + "|")
+		// buffer.Write("|")
+		for section, _ := range articles[title].Sections {
+			buffer.Write(section)
+			buffer.Write("::")
+			compressor.Write(articles[title].Sections[section].Content)
+			for refNum, _ := range articles[title].Sections[section].References {
+				compressor.Write(articles[title].Sections[section].References[refNum])
+				if refNum < len(articles[title].Sections[section].References) - 1 { buffer.Write(":") }
+			}
+			buffer.Write("::")
+			for linkNum, _ := range articles[title].Sections[section].Links {
+				compressor.Write(articles[title].Sections[section].Links[linkNum])
+				if linkNum < len(articles[title].Sections[section].Links) - 1 { buffer.Write(":") }
+			}
+			buffer.Write("::")
+			for key, _ := range articles[title].Sections[section].XKeyChain {
+				nounNum++
+				buffer.Write(key)
+				if nounNum < 9 { buffer.Write(":") }
+				compressor.Write(Sections[section].XKeyChain[key])
+				if nounNum < 9 { buffer.Write("-") }
+			}
+			buffer.Write("|")
+		}
+		fmt.Fprintln(contentFile, buffer.Bytes())
+		intContentFileLength, err := strconv.Atoi(contentFileLength)
+		if err != nil { return err }
+		buffer.Reset()
+		err = compressor.Reset(&buffer)
+		if err != nil { return err }
+		contentFileLength = []byte(strconv.Itoa(intContentFileLength + int(len(buffer.Bytes()))))
+		fmt.Fprintln(indexFile, title + ":" + contentFileLength)
+	}
+	return nil
+}
+func ReadIndex(directory *string) (index map[string](map[string]bool), err error) {
+	indexFile, err := os.Open(*directory + "/index.txt")
+	bufioReader := bufio.NewReader(indexFile)
+	for {
+		line, _, err := bufioReader.ReadLine()
+		if err != nil {
+			if err == io.EOF { break }
+			return nil, err
+		}
+		parts := strings.Split(string(line), ":")
+		index[parts[0]][parts[1]] = true
+	}
+	return index, nil
+}
+func (page Page) DecompressContent(directory *string, offset *int64) (err error) {
+	file, err := os.Open(*directory + "/" + "contentfile.dat")
+	if err != nil { return err }
+	_, err = file.Seek(*offset, -1)
+	if err != nil { return err }
+	/* var buffer bytes.Buffer
+	decompressor := gzip.NewReader(&buffer)
+	bufioReader, err := bufio.NewReader(file) */
+	line, _ , err := bufioReader.ReadLine()
+	if err != nil { return err }
+	sections := strings.Split(string(line), "|")
+	for i := 1; i < len(sections); i++ {
+		// for _, section := range sections {
+		sectionElements := strings.Split(section[i], "::")
+		for num, _ := range sectionElements {
+			page[sectionElements[0]].Content = []byte(sectionElements[1])
+		}
+	}
+	return nil
+}
+// The data stays compressed
+func (page Page) GetMetaData(directory *string, offset *int64) (err error) {
+	file, err := os.Open(*directory + "/" + "contentfile.dat")
+	if err != nil { return err }
+	_, err = file.Seek(*offset, -1)
+	if err != nil { return err }
+	/* var buffer bytes.Buffer
+	decompressor := gzip.NewReader(&buffer) */
+	bufioReader, err := bufio.NewReader(file)
+	line, _ , err := bufioReader.ReadLine()
+	if err != nil { return err }
+	sections := strings.Split(string(line), "|")
+	page.ID = []byte(sections[0])
+	for i := 1; i < len(sections); i++ {
+		sectionElements := strings.Split(sections[i], "::")
+		// page[section[0]].Content = []byte(section[1])
+		page[sectionElements[0]].References = strings.Split(sectionElements[1], ":")
+		page[sectionElements[0]].Links = strings.Split(sectionElements[2], ":")
+		xKeyChainParts := strings.Split(sectionElements[3], "-")
+		for i := 0; i < len(xKeyChainParts); i++ {
+			absXKeyChainParts := strings.Split(xKeyChainParts, ":")
+			page[sectionElements[0]].XKeyChain[absXKeyChainParts[0]] = absXKeyChainParts[1]
+		}
+	}
+	return nil
 }
 
-// TODO
-func (articles map[string]PageItems) TfIdf(input *string) (RelevantDocs map[string]string, err error) {
-	RelevantDocs := make(map[string]string)
-	nouns := make(map[string]string)
-	words := fasttag.WordsToSlice(input)
+func (section Section) TfIdf(input *string) float64 {
+	words := fasttag.WordsToSlice(*input)
 	postags := fasttag.BrillTagger(words)
 	var good []string
-	for number, _ := range words {
-		if postags[number][:1] == "N" {
-			good = append(good, words[number])
-		}
-	}
-	for key, _ := range articles {
-		for _, section := range articles[key.Sections {
 
-		}
+	content := string(section.Content)
+	for _, nounOffset := range section.TopNouns {
+		good = append(good, strconv.Atoi(content[
+			strconv.Atoi(nounOffset[0]):
+			strconv.Atoi(nounOffset[1])]))
 	}
+	return float64(len(good)) / float64(len(fasttag.WordsToSlice(*input)))
 }
 
-// TODO: Implement the 2 underlying methods into the gzip read/write calls.
 func main() {
-	buildIndex := flag.Bool("-build_index", false, "if the index is not build, provide this as an argument")
-	articleFlag := flag.String("-articles", "", "Write the desired articles to use as input for the program, but use _ instead of \" \", and separate the articles with a \",\"")
-	flag.Parse()
-	if strings.EqualFold(articles, "") {
-		fmt.Println("--articles argument must to be non-nil")
-		break
-	}
-	articles := strings.Split(*articleFlag, ",")
-	defer recover()
-	files, err := GetFilesFromArticlesDir("/run/media/naamik/Data/articles")
-	if err != nil { panic(err) }
-	if *buildIndex {
-		var indexBuildBuffer buffer bytes.Buffer
-		gzipWriter := gzip.NewWriter(&buffer)
-		for _, file := range files {
-			file, err := os.Open("/run/media/naamik/Data/articles/" + file)
-			ArrByteContent, err := ioutil.ReadAll(file)
-			if err != nil { panic(err) }
-			index, err := IndexWiki(string(ArrByteContent))
-			if err != nil { panic(err) }
-			err = WriteIndex("/run/media/naamik/Data/articles/index", file + ".index", index)
-			if err != nil { panic(err) }
-		}
-	}
-	index, err := ReadWikiIndices("/run/media/naamik/Data/articles/index")
-	if err != nil { panic(err) }
-	for _, article := range *articles {
-
-	}
-}
-
-func (section Section) Decompress(wg sync.WaitGroup, buffer bytes.Buffer, gzipWriter gzip.Reader) (data []byte, err error) {
-	wg.Wait()
-	var buffer bytes.Buffer
-	gzipReader := gzip.NewReader(&buffer)
-	_; err = gzipReader.Read(section.Content)
-	if err != nil { return nil, err }
-	gzipReader.Flush()
-	gzipReader.Reset()
-	// gzipReader.Close()
-	return buffer.Bytes(), nil
-}
-func (section Section) Compress(data []byte, wg sync.WaitGroup, gzipWriter gzip.Writer) (err error) {
-	wg.Wait()
-	var buffer bytes.Buffer
-	gzipWriter := gzip.NewWriter(&buffer)
-	_, err = gzipWriter.Write(data)
-	if err != nil { return err }
-	gzipWriter.Flush()
-	gzipReader.Reset()
-	// err = gzipWriter.Close()
-	if err != nil { return err }
-	section.Content = buffer.Bytes()
-	return nil
+	// TODO: calculate how big a graph can be made for pageranking.
+	
 }
