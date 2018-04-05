@@ -6,7 +6,7 @@ As of now I have:
 - Tag the content (english text) for their POS (Part-Of-Speech) as defined by a brill tagger (see github.com/mvryan/fasttag)
 - Train a markov chain on the penn treebank by Python's NLTK data (see http://www.nltk.org/nltk_data/ #18)
 - Extract nouns and count their frequency in a document
-- Pagerank some articles based on links
+- Pageranked some articles based on links
 - Swapped the heading of the project from mysql, github.com/boltdb/bolt, to gzipping, zipping, flating, and pure text - also considered lzma, but that was not in the golang's std lib.
 - Considered github.com/google/readahead for bulk RAM access of entire wikipedia, but that was too inefficient over indexing.
 
