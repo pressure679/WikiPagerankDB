@@ -1,4 +1,4 @@
-|package GhostWriter
+package GhostWriter
 
 import (
 	"bufio"
@@ -227,13 +227,14 @@ type MWAbstractUrl struct {
 
 //stop word list from SMART (Salton,1971).  Available at ftp://ftp.cs.cornell.edu/pub/smart/english.stop
 var StopWordsSlice = []string{
-	"a", "a's", "able", "about", "above", "according", "accordingly", "across", "actually", "after", "afterwards", "again", "against", "ain't", "all", "allow", "allows", "almost", "alone", "along", "already", "also", "although", "always", "am", "among", "amongst", "an", "and", "another", "any", "anybody", "anyhow", "anyone", "anything", "anyway", "anyways", "anywhere", "apart", "appear", "appreciate", "appropriate", "are", "aren't", "around", "as", "aside", "ask", "asking", "associated", "at", "available", "away", "awfully", "b", "be", "became", "because", "become", "becomes", "becoming", "been", "before", "beforehand", "behind", "being", "believe", "below", "beside", "besides", "best", "better", "between", "beyond", "both", "brief", "but", "by", "c", "c'mon", "c's", "came", "can", "can't", "cannot", "cant", "cause", "causes", "certain", "certainly", "changes", "clearly", "co", "com", "come", "comes", "concerning", "consequently", "consider", "considering", "contain", "containing", "contains", "corresponding", "could", "couldn't", "course", "currently", "d", "definitely", "described", "despite", "did", "didn't", "different", "do", "does", "doesn't", "doing", "don't", "done", "down", "downwards", "during", "e", "each", "edu", "eg", "eight", "either", "else", "elsewhere", "enough", "entirely", "especially", "et", "etc", "even", "ever", "every", "everybody", "everyone", "everything", "everywhere", "ex", "exactly", "example", "except", "f", "far", "few", "fifth", "first", "five", "followed", "following", "follows", "for", "former", "formerly", "forth", "four", "from", "further", "furthermore", "g", "get", "gets", "getting", "given", "gives", "go", "goes", "going", "gone", "got", "gotten", "greetings", "h", "had", "hadn't", "happens", "hardly", "has", "hasn't", "have", "haven't", "having", "he", "he's", "hello", "help", "hence", "her", "here", "here's", "hereafter", "hereby", "herein", "hereupon", "hers", "herself", "hi", "him", "himself", "his", "hither", "hopefully", "how", "howbeit", "however", "i", "i'd", "i'll", "i'm", "i've", "ie", "if", "ignored", "immediate", "in", "inasmuch", "inc", "indeed", "indicate", "indicated", "indicates", "inner", "insofar", "instead", "into", "inward", "is", "isn't", "it", "it'd", "it'll", "it's", "its", "itself", "j", "just", "k", "keep", "keeps", "kept", "know", "knows", "known", "l", "last", "lately", "later", "latter", "latterly", "least", "less", "lest", "let", "let's", "like", "liked", "likely", "little", "look", "looking", "looks", "ltd", "m", "mainly", "many", "may", "maybe", "me", "mean", "meanwhile", "merely", "might", "more", "moreover", "most", "mostly", "much", "must", "my", "myself", "n", "name", "namely", "nd", "near", "nearly", "necessary", "need", "needs", "neither", "never", "nevertheless", "new", "next", "nine", "no", "nobody", "non", "none", "noone", "nor", "normally", "not", "nothing", "novel", "now", "nowhere", "o", "obviously", "of", "off", "often", "oh", "ok", "okay", "old", "on", "once", "one", "ones", "only", "onto", "or", "other", "others", "otherwise", "ought", "our", "ours", "ourselves", "out", "outside", "over", "overall", "own", "p", "particular", "particularly", "per", "perhaps", "placed", "please", "plus", "possible", "presumably", "probably", "provides", "q", "que", "quite", "qv", "r", "rather", "rd", "re", "really", "reasonably", "regarding", "regardless", "regards", "relatively", "respectively", "right", "s", "said", "same", "saw", "say", "saying", "says", "second", "secondly", "see", "seeing", "seem", "seemed", "seeming", "seems", "seen", "self", "selves", "sensible", "sent", "serious", "seriously", "seven", "several", "shall", "she", "should", "shouldn't", "since", "six", "so", "some", "somebody", "somehow", "someone", "something", "sometime", "sometimes", "somewhat", "somewhere", "soon", "sorry", "specified", "specify", "specifying", "still", "sub", "such", "sup", "sure", "t", "t's", "take", "taken", "tell", "tends", "th", "than", "thank", "thanks", "thanx", "that", "that's", "thats", "the", "their", "theirs", "them", "themselves", "then", "thence", "there", "there's", "thereafter", "thereby", "therefore", "therein", "theres", "thereupon", "these", "they", "they'd", "they'll", "they're", "they've", "think", "third", "this", "thorough", "thoroughly", "those", "though", "three", "through", "throughout", "thru", "thus", "to", "together", "too", "took", "toward", "towards", "tried", "tries", "truly", "try", "trying", "twice", "two", "u", "un", "under", "unfortunately", "unless", "unlikely", "until", "unto", "up", "upon", "us", "use", "used", "useful", "uses", "using", "usually", "uucp", "v", "value", "various", "very", "via", "viz", "vs", "w", "want", "wants", "was", "wasn't", "way", "we", "we'd", "we'll", "we're", "we've", "welcome", "well", "went", "were", "weren't", "what", "what's", "whatever", "when", "whence", "whenever", "where", "where's", "whereafter", "whereas", "whereby", "wherein", "whereupon", "wherever", "whether", "which", "while", "whither", "who", "who's", "whoever", "whole", "whom", "whose", "why", "will", "willing", "wish", "with", "within", "without", "won't", "wonder", "would", "would", "wouldn't", "x", "y", "yes", "yet", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself", "yourselves", "z", "zero"
+"a", "a's", "able", "about", "above", "according", "accordingly", "across", "actually", "after", "afterwards", "again", "against", "ain't", "all", "allow", "allows", "almost", "alone", "along", "already", "also", "although", "always", "am", "among", "amongst", "an", "and", "another", "any", "anybody", "anyhow", "anyone", "anything", "anyway", "anyways", "anywhere", "apart", "appear", "appreciate", "appropriate", "are", "aren't", "around", "as", "aside", "ask", "asking", "associated", "at", "available", "away", "awfully", "b", "be", "became", "because", "become", "becomes", "becoming", "been", "before", "beforehand", "behind", "being", "believe", "below", "beside", "besides", "best", "better", "between", "beyond", "both", "brief", "but", "by", "c", "c'mon", "c's", "came", "can", "can't", "cannot", "cant", "cause", "causes", "certain", "certainly", "changes", "clearly", "co", "com", "come", "comes", "concerning", "consequently", "consider", "considering", "contain", "containing", "contains", "corresponding", "could", "couldn't", "course", "currently", "d", "definitely", "described", "despite", "did", "didn't", "different", "do", "does", "doesn't", "doing", "don't", "done", "down", "downwards", "during", "e", "each", "edu", "eg", "eight", "either", "else", "elsewhere", "enough", "entirely", "especially", "et", "etc", "even", "ever", "every", "everybody", "everyone", "everything", "everywhere", "ex", "exactly", "example", "except", "f", "far", "few", "fifth", "first", "five", "followed", "following", "follows", "for", "former", "formerly", "forth", "four", "from", "further", "furthermore", "g", "get", "gets", "getting", "given", "gives", "go", "goes", "going", "gone", "got", "gotten", "greetings", "h", "had", "hadn't", "happens", "hardly", "has", "hasn't", "have", "haven't", "having", "he", "he's", "hello", "help", "hence", "her", "here", "here's", "hereafter", "hereby", "herein", "hereupon", "hers", "herself", "hi", "him", "himself", "his", "hither", "hopefully", "how", "howbeit", "however", "i", "i'd", "i'll", "i'm", "i've", "ie", "if", "ignored", "immediate", "in", "inasmuch", "inc", "indeed", "indicate", "indicated", "indicates", "inner", "insofar", "instead", "into", "inward", "is", "isn't", "it", "it'd", "it'll", "it's", "its", "itself", "j", "just", "k", "keep", "keeps", "kept", "know", "knows", "known", "l", "last", "lately", "later", "latter", "latterly", "least", "less", "lest", "let", "let's", "like", "liked", "likely", "little", "look", "looking", "looks", "ltd", "m", "mainly", "many", "may", "maybe", "me", "mean", "meanwhile", "merely", "might", "more", "moreover", "most", "mostly", "much", "must", "my", "myself", "n", "name", "namely", "nd", "near", "nearly", "necessary", "need", "needs", "neither", "never", "nevertheless", "new", "next", "nine", "no", "nobody", "non", "none", "noone", "nor", "normally", "not", "nothing", "novel", "now", "nowhere", "o", "obviously", "of", "off", "often", "oh", "ok", "okay", "old", "on", "once", "one", "ones", "only", "onto", "or", "other", "others", "otherwise", "ought", "our", "ours", "ourselves", "out", "outside", "over", "overall", "own", "p", "particular", "particularly", "per", "perhaps", "placed", "please", "plus", "possible", "presumably", "probably", "provides", "q", "que", "quite", "qv", "r", "rather", "rd", "re", "really", "reasonably", "regarding", "regardless", "regards", "relatively", "respectively", "right", "s", "said", "same", "saw", "say", "saying", "says", "second", "secondly", "see", "seeing", "seem", "seemed", "seeming", "seems", "seen", "self", "selves", "sensible", "sent", "serious", "seriously", "seven", "several", "shall", "she", "should", "shouldn't", "since", "six", "so", "some", "somebody", "somehow", "someone", "something", "sometime", "sometimes", "somewhat", "somewhere", "soon", "sorry", "specified", "specify", "specifying", "still", "sub", "such", "sup", "sure", "t", "t's", "take", "taken", "tell", "tends", "th", "than", "thank", "thanks", "thanx", "that", "that's", "thats", "the", "their", "theirs", "them", "themselves", "then", "thence", "there", "there's", "thereafter", "thereby", "therefore", "therein", "theres", "thereupon", "these", "they", "they'd", "they'll", "they're", "they've", "think", "third", "this", "thorough", "thoroughly", "those", "though", "three", "through", "throughout", "thru", "thus", "to", "together", "too", "took", "toward", "towards", "tried", "tries", "truly", "try", "trying", "twice", "two", "u", "un", "under", "unfortunately", "unless", "unlikely", "until", "unto", "up", "upon", "us", "use", "used", "useful", "uses", "using", "usually", "uucp", "v", "value", "various", "very", "via", "viz", "vs", "w", "want", "wants", "was", "wasn't", "way", "we", "we'd", "we'll", "we're", "we've", "welcome", "well", "went", "were", "weren't", "what", "what's", "whatever", "when", "whence", "whenever", "where", "where's", "whereafter", "whereas", "whereby", "wherein", "whereupon", "wherever", "whether", "which", "while", "whither", "who", "who's", "whoever", "whole", "whom", "whose", "why", "will", "willing", "wish", "with", "within", "without", "won't", "wonder", "would", "would", "wouldn't", "x", "y", "yes", "yet", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself", "yourselves", "z", "zero",
 }
 
 // TODO: Implement this hash table into the linear regression calculator in the graph's TfIdf method and pagerank method (and eventually into the to be SE methods (also pagerank and TfIdf). - The idea is to save memory by referencing calculated values into the hash table; it will decrease precision, but the overall value variety shouldn't be an issue. The factors for value variety (The length of the HashTable.Decimals) should be considered changed for different hardware cases. - So the method, TfIdf and Pagerank, should have a side-by-side method derived from the graph (MWGraph and to be SEGraph) to reference a HashTable.Decimals value and
-type HashTable struct { Titles, Words []string; Decimals [255]float64 } // TODO: The Decimals object should have an Init() method to initialize the value (for n := 0; n < 128; n++ { HashTable.Decimals[n] = 128/100*n }
+type HashTable struct { Titles, Words map[string]bool; Decimals [255]float64 } // TODO: The Decimals object should have an Init() method to initialize the value (for n := 0; n < 128; n++ { HashTable.Decimals[n] = 128/100*n }
 // TODO: Liberate the HashTable from the Graph struct, because the articles, metadata, and hash table will be appended to and sorted in different methods at different sequences. - See ReadWikiXML's Link appendage (this method should assign a temporal Link variable declaration for the Graph's Article structs) and ReadIndex_StageTwo's Link appendage (This will actually append Links' Title to the hash table after every step in the for loop, so the hash table should be updated after everyy for loop by an insertion sort).
-type Word struct { Word *string; PreviousSentenceIndex [][]byte; LastSentenceIndex [][]byte; ZScore *float64; Extremum *float64 }
+// TODO: Move the Word struct into the Article.Sections variable) after it has been edited into a struct... When you want.
+type Word struct { Word *string; PreviousSentenceIndex [][]byte; LastSentenceIndex [][]byte; ZScore float64; Extremum float64 }
 type Words []Word
 type MetaData struct { Title *string; Nouns Words }
 type Article struct { Title *string; Sections map[string]string; References []string; Links []*Article; tmpStorageLinks []string; MetaData MetaData; Offset int64 }
@@ -257,11 +258,13 @@ func DecompressBZip(directory, file *string) (ioReader io.Reader, err error) {
 }
 
 func (graph Graph) ReadWikiXML(directory *string) (err error) {
-	files, err := GetFilesFromArticlesDir(directory); if err != nil { return err }; referenceRE := regexp.MustCompile("<ref>(.+)</ref>"); linkRE := regexp.MustCompile("[[(.+)]]"); /* citeRE := regexp.MustCompile("{{cite(.+)}}"); */ sectionRE := regexp.MustCompile("[=]{2,5}(.+)[=]{2,5}"); var sentenceIndex, previousSentenceIndex, curNounIndex int = -1, -1, -1; var mwPage MWPage; var sections  map[string]string; var sectionTitle string; var references []string; var nouns Words
+	files, err := GetFilesFromArticlesDir(directory); if err != nil { return err }; referenceRE := regexp.MustCompile("<ref>(.+)</ref>"); linkRE := regexp.MustCompile("[[(.+)]]"); /* citeRE := regexp.MustCompile("{{cite(.+)}}"); */ sectionRE := regexp.MustCompile("[=]{2,5}(.+)[=]{2,5}"); var sentenceIndex, previousSentenceIndex, curNounIndex int = -1, -1, -1; var mwPage MWPage; var sections  map[string]string; var sectionTitle string; var references []string; /* var nouns Words */
 	for _, file := range files {
-		ioReader, err := DecompressBZip(directory, file); if err != nil { return err }; xmlDecoder := xml.NewDecoder(ioReader); err = xmlDecoder.Decode(&mwPage); if err != nil { if strings.EqualFold(err.Error(), io.EOF.Error()) { break } else { return err } }
+		ioReader, err := DecompressBZip(directory, &file); if err != nil { return err }; xmlDecoder := xml.NewDecoder(ioReader); err = xmlDecoder.Decode(&mwPage); if err != nil { if strings.EqualFold(err.Error(), io.EOF.Error()) { break } else { return err } }
 		if mwPage.Revisions[0].Text != "" {
-			graph.HashTable.Titles = append(graph.HashTable.Titles, mwPage.Title)
+			if !graph.HashTable.Titles[mwPage.Title] {
+				graph.HashTable.Titles[mwPage.Title] = true
+			}
 			currentTitleOffset := sort.SearchStrings(graph.HashTable.Titles, mwPage.Title)
 			graph.Articles = append(graph.Articles, Article{Title: &graph.HashTable.Titles[currentTitleOffset]})
 			mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, "&lt;", "<", -1); mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, "&gt;", ">", -1); mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, "&quot;", "\"", -1); mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, "&amp;", "&", -1) /* ; mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, ";", "", -1); */ /* TODO: Implement a strings.Replace method to remove a last html element (a href), and the ";" replacements might replace semicolons not used for xml escape characters.*/  /* graph[mwPage.Title].ID = []byte(strconv.Itoa(int(mwPage.Revisions[i].ID))) */
@@ -270,7 +273,7 @@ func (graph Graph) ReadWikiXML(directory *string) (err error) {
 			var article Article
 			sectionIndex := sectionRE.FindAllStringIndex(mwPage.Revisions[0].Text, -1); for sectionNum, _ := range sectionIndex { sectionTitle = strings.Trim(mwPage.Revisions[0].Text[sectionIndex[sectionNum][0]:sectionIndex[sectionNum][1]], "="); if sectionNum == 0 { sections["Abstract"] = mwPage.Revisions[0].Text[:sectionIndex[sectionNum][1]-1] } else if sectionNum < len(sectionIndex) - 1 { sections[sectionTitle] = mwPage.Revisions[0].Text[sectionIndex[sectionNum][1]:sectionIndex[sectionNum+1][0]] } else { sections[sectionTitle] = mwPage.Revisions[0].Text[sectionIndex[sectionNum][1]:len(mwPage.Revisions[0].Text)] }
 				refIndex := referenceRE.FindAllStringIndex(mwPage.Revisions[0].Text, -1); for refNum, _ := range refIndex { references = append(references, mwPage.Revisions[0].Text[refIndex[refNum][0]:refIndex[refNum][1]]); mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, mwPage.Revisions[0].Text[refIndex[refNum][0]:refIndex[refNum][1]], "[r:" + strconv.Itoa(refNum) + "]", -1) }
-				linkIndex := linkRE.FindAllStringIndex(mwPage.Revisions[0].Text, -1); for linkNum, _ := range linkIndex { link := strings.Split(mwPage.Revisions[0].Text[linkIndex[linkNum][0]:linkIndex[linkNum][1]], "|")[2:][0]; graph.HashTable.Titles = append(graph.HashTable.Titles, string(link[0])); currentLinkOffset := sort.SearchStrings(graph.HashTable.Titles, string(link[0])); article.Links = append(article.Links, &Article{Title: graph.HashTable.Titles[currentLinkOffset]}); mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, mwPage.Revisions[0].Text[linkIndex[linkNum][0]:linkIndex[linkNum][1]], "[l:" + strconv.Itoa(linkNum) + "]", -1) }
+				linkIndex := linkRE.FindAllStringIndex(mwPage.Revisions[0].Text, -1); for linkNum, _ := range linkIndex { link := strings.Split(mwPage.Revisions[0].Text[linkIndex[linkNum][0]:linkIndex[linkNum][1]], "|")[2:][0]; graph.HashTable.Titles = append(graph.HashTable.Titles, link); currentLinkOffset := sort.SearchStrings(graph.HashTable.Titles, link); article.Links = append(article.Links, *Article{Title: graph.HashTable.Titles[currentLinkOffset]}); mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, mwPage.Revisions[0].Text[linkIndex[linkNum][0]:linkIndex[linkNum][1]], "[l:" + strconv.Itoa(linkNum) + "]", -1) }
 				article.Sections = sections }; graph.Articles = append(graph.Articles, article) } }; return
 }
 
@@ -318,9 +321,11 @@ func (graph Graph) ReadMetaData(directory, baseArticle string) (err error) {
 	file, err := os.OpenFile(directory+"/"+baseArticle+".mdat", os.O_RDONLY, 0700);
 	if err != nil { return err };
 	defer file.Close();
+	// var bufioReader bufio.Reader
 	bufioReader := bufio.NewReader(file);
 	var line []byte;
 	var buffer bytes.Buffer;
+	// var gobDecoder gob.Decoder;
 	gobDecoder := gob.NewDecoder(&buffer);
 	var table MetaData
 	for {
@@ -330,17 +335,24 @@ func (graph Graph) ReadMetaData(directory, baseArticle string) (err error) {
 				break
 			};
 			return err
-		}; graph.
-		for i := 0;
-		i < len(articleMetaData);
-		i++ {
-			err = gobDecoder.Decode(&table);
-			if err != nil {
-				return err
-			};
-			graph.Articles = append(graph.Articles, Article{MetaData: table})
 		}
-	};
+		_, err = buffer.Read(line)
+		if err != nil {
+			return err
+		};
+		err = gobDecoder.Decode(&table)
+		if err != nil {
+			return err
+		}
+		graph.Articles = append(graph.Articles, Article{MetaData: table})
+	}
+	// for i := -1; i < len(articleMetaData); i++ {
+		// err = gobDecoder.Decode(&table);
+		// if err != nil {
+			// return err
+		// };
+		// graph.Articles = append(graph.Articles, Article{MetaData: table})
+	// };
 	return
 }
 
@@ -349,50 +361,43 @@ func (graph Graph) TfIdf() (err error) {
 	var f64_mean, f64_stdDev, f64_zScore float64 = 0.0, 0.0, 0.0
 
 	// get sum of word occurences and sum of words and then derive mean word occurence.
-	for graphNum, _ := range graph {
-		for pageNum, _ := range graph[graphNum].Page {
-			for section, _ := range graph[graphNum].Page[pageNum].Sections {
+	for articleNum, _ := range graph.Articles {
+		for wordNum, _ := range graph.Articles[articleNum].MetaData.Nouns {
+			for sectionTitle, _ := range graph.Articles[articleNum].Sections {
 				// TODO
-				for wordNum, _ := range article.Page[num].Sections[section].Noun {
-
-					uint_wordOccurenceSum += len(article.Page[num].Sections[section].Noun.Sentences)
-					switch {
-					case len(article.Page[num].Sections[section].Noun[wordNum]) > uint_maxOccurence:
-						uint_maxOccurence = len(article.Page[num].Sections[section].Noun[wordNum])
-					// This might as well be replaced by 1.
-					case len(article.Page[num].Sections[section].Noun[wordNum]) < uint_minOccurence:
-						uint_minOccurence = len(article.Page[num].Sections[section].Noun[wordNum])
-					}
+				// for wordNum, _ := range graph[graphNum].Page[pageNum].Sections[sectionTitle].Noun {
+				uint_wordOccurenceSum += len(graph.Articles[articleNum].Sections[sectionTitle].Nouns.Sentences)
+				switch {
+				case len(graph.Articles[articleNum].Sections[sectionTitle].Nouns[wordNum]) > uint_maxOccurence:
+					uint_maxOccurence = len(graph.Articles[articleNum].Sections[sectionTitle].Nouns[wordNum])
+				// This might as well be replaced by 1.
+				case len(graph.Articles[articleNum].Sections[sectionTitle].Nouns[wordNum]) < uint_minOccurence:
+					uint_minOccurence = len(graph.Articles[articleNum].Sections[sectionTitle].Nouns[wordNum])
 				}
-				uint_wordSum += len(article.Page[num].Sections[section].Noun)
 			}
+			uint_wordSum += len(graph.Articles[articleNum].Sections[sectionTitle].Nouns)
 		}
 	}
 	f64_mean = float64(uint_wordOccurenceSum) / float64(uint_wordSum)
 
 	// Calculate standard deviation by LMS, linear regression.
-	for graphNum, _ := range graph {
-		for pageNum, _ := range graph[graphNum].Page {
-			for section, _ := range graph[graphNum].Page[pageNum].Sections {
-				for wordNum, _ := range article.Page[num].Sections[section].Noun {
-					f64_stdDev += math.Pow(
-						float64(
-							len(article.Page[num].Sections[section].Noun[wordNum].Sentences))-
-							f64_mean, float64(2))
-					if err != nil { return err }
-				}
+	for graphNum, _ := range graph.Articles {
+		for sectionTitle, _ := range graph[graphNum].Page[pageNum].Sections {
+			for wordNum, _ := range graph.Articles[articleNum].Meta {
+				f64_stdDev += math.Pow(float64(len(graph.Articles[articleNum].Sections[sectionTitle].Nouns[wordNum].Sentences))-f64_mean, float64(2))
+				if err != nil { return err }
 			}
 		}
 	}
 	f64_stdDev = math.Sqrt(float64(1)/strconv.ParseFloat(string(wordSum.Bytes()), 64)*f64_stdDev, float64(2))
 
-	// Calculate z score and extremum values for each noun.
+	// Calculate z score and extremum values for each Nouns.
 	for graphNum, _ := range graph {
 		for pageNum, _ := range graph[graphNum].Page {
 			for section, _ := range graph[graphNum].Page[pageNum].Sections {
-				for wordNum, _ := range graph[graphNum].Page[pageNum].Sections[section].Noun {
-					graph[graphNum].Page[pageNum].Sections[section].Noun[wordNum].ZScore.Read(strconv.ParseFloat(f64_mean / float64(uint_maxOccurence - uint_minOccurence)), 64)
-					// graph[graphNum].Page[pageNum].Sections[section].Noun[wordNum].Extremum.Read(strconv.ParseFloat(float64(len(graph[graphNum].Page[pageNum].Sections[section].Noun[wordNum].Sentences)f64_mean)/float64(uint_maxOccurence-uint_minOccurence)), 64)
+				for wordNum, _ := range graph[graphNum].Page[pageNum].Sections[sectionTitle].Noun {
+					graph[graphNum].Page[pageNum].Sections[sectionTitle].Nouns[wordNum].ZScore.Read(strconv.ParseFloat(f64_mean / float64(uint_maxOccurence - uint_minOccurence)), 64)
+					// graph[graphNum].Page[pageNum].Sections[sectionTitle].Nouns[wordNum].Extremum.Read(strconv.ParseFloat(float64(len(graph[graphNum].Page[pageNum].Sections[sectionTitle].Nouns[wordNum].Sentences)f64_mean)/float64(uint_maxOccurence-uint_minOccurence)), 64)
 				}
 			}
 		}
