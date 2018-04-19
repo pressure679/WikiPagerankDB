@@ -3,7 +3,6 @@ package GhostWriter
 import (
 	"bufio"
 	"bytes"
-	// "flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -11,24 +10,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	// "archive/zip"
 	"compress/bzip2"
 	"compress/gzip"
 	"encoding/gob"
 	"encoding/xml"
-	// "github.com/Obaied/rake"
-	// "github.com/alixaxel/pagerank"
 	"github.com/mvryan/fasttag"
 	"math"
-	// "sort"
-	// "database/sql"
-	// _ "github.com/go-sql-driver/mysql"
-	// "github.com/gen2brain/go-unarr"
-	// "github.com/jbrukh/bayesian"
-	// "github.com/neurosnap/sentences"
-	// "golang.org/x/text/search"
-	// "legacy/rosettacode/dijkstra"
-	// "reflect"
+	"flag"
 )
 
 type SEBadge struct {
@@ -231,16 +219,84 @@ var StopWordsSlice = []string{
 	"a", "a's", "able", "about", "above", "according", "accordingly", "across", "actually", "after", "afterwards", "again", "against", "ain't", "all", "allow", "allows", "almost", "alone", "along", "already", "also", "although", "always", "am", "among", "amongst", "an", "and", "another", "any", "anybody", "anyhow", "anyone", "anything", "anyway", "anyways", "anywhere", "apart", "appear", "appreciate", "appropriate", "are", "aren't", "around", "as", "aside", "ask", "asking", "associated", "at", "available", "away", "awfully", "b", "be", "became", "because", "become", "becomes", "becoming", "been", "before", "beforehand", "behind", "being", "believe", "below", "beside", "besides", "best", "better", "between", "beyond", "both", "brief", "but", "by", "c", "c'mon", "c's", "came", "can", "can't", "cannot", "cant", "cause", "causes", "certain", "certainly", "changes", "clearly", "co", "com", "come", "comes", "concerning", "consequently", "consider", "considering", "contain", "containing", "contains", "corresponding", "could", "couldn't", "course", "currently", "d", "definitely", "described", "despite", "did", "didn't", "different", "do", "does", "doesn't", "doing", "don't", "done", "down", "downwards", "during", "e", "each", "edu", "eg", "eight", "either", "else", "elsewhere", "enough", "entirely", "especially", "et", "etc", "even", "ever", "every", "everybody", "everyone", "everything", "everywhere", "ex", "exactly", "example", "except", "f", "far", "few", "fifth", "first", "five", "followed", "following", "follows", "for", "former", "formerly", "forth", "four", "from", "further", "furthermore", "g", "get", "gets", "getting", "given", "gives", "go", "goes", "going", "gone", "got", "gotten", "greetings", "h", "had", "hadn't", "happens", "hardly", "has", "hasn't", "have", "haven't", "having", "he", "he's", "hello", "help", "hence", "her", "here", "here's", "hereafter", "hereby", "herein", "hereupon", "hers", "herself", "hi", "him", "himself", "his", "hither", "hopefully", "how", "howbeit", "however", "i", "i'd", "i'll", "i'm", "i've", "ie", "if", "ignored", "immediate", "in", "inasmuch", "inc", "indeed", "indicate", "indicated", "indicates", "inner", "insofar", "instead", "into", "inward", "is", "isn't", "it", "it'd", "it'll", "it's", "its", "itself", "j", "just", "k", "keep", "keeps", "kept", "know", "knows", "known", "l", "last", "lately", "later", "latter", "latterly", "least", "less", "lest", "let", "let's", "like", "liked", "likely", "little", "look", "looking", "looks", "ltd", "m", "mainly", "many", "may", "maybe", "me", "mean", "meanwhile", "merely", "might", "more", "moreover", "most", "mostly", "much", "must", "my", "myself", "n", "name", "namely", "nd", "near", "nearly", "necessary", "need", "needs", "neither", "never", "nevertheless", "new", "next", "nine", "no", "nobody", "non", "none", "noone", "nor", "normally", "not", "nothing", "novel", "now", "nowhere", "o", "obviously", "of", "off", "often", "oh", "ok", "okay", "old", "on", "once", "one", "ones", "only", "onto", "or", "other", "others", "otherwise", "ought", "our", "ours", "ourselves", "out", "outside", "over", "overall", "own", "p", "particular", "particularly", "per", "perhaps", "placed", "please", "plus", "possible", "presumably", "probably", "provides", "q", "que", "quite", "qv", "r", "rather", "rd", "re", "really", "reasonably", "regarding", "regardless", "regards", "relatively", "respectively", "right", "s", "said", "same", "saw", "say", "saying", "says", "second", "secondly", "see", "seeing", "seem", "seemed", "seeming", "seems", "seen", "self", "selves", "sensible", "sent", "serious", "seriously", "seven", "several", "shall", "she", "should", "shouldn't", "since", "six", "so", "some", "somebody", "somehow", "someone", "something", "sometime", "sometimes", "somewhat", "somewhere", "soon", "sorry", "specified", "specify", "specifying", "still", "sub", "such", "sup", "sure", "t", "t's", "take", "taken", "tell", "tends", "th", "than", "thank", "thanks", "thanx", "that", "that's", "thats", "the", "their", "theirs", "them", "themselves", "then", "thence", "there", "there's", "thereafter", "thereby", "therefore", "therein", "theres", "thereupon", "these", "they", "they'd", "they'll", "they're", "they've", "think", "third", "this", "thorough", "thoroughly", "those", "though", "three", "through", "throughout", "thru", "thus", "to", "together", "too", "took", "toward", "towards", "tried", "tries", "truly", "try", "trying", "twice", "two", "u", "un", "under", "unfortunately", "unless", "unlikely", "until", "unto", "up", "upon", "us", "use", "used", "useful", "uses", "using", "usually", "uucp", "v", "value", "various", "very", "via", "viz", "vs", "w", "want", "wants", "was", "wasn't", "way", "we", "we'd", "we'll", "we're", "we've", "welcome", "well", "went", "were", "weren't", "what", "what's", "whatever", "when", "whence", "whenever", "where", "where's", "whereafter", "whereas", "whereby", "wherein", "whereupon", "wherever", "whether", "which", "while", "whither", "who", "who's", "whoever", "whole", "whom", "whose", "why", "will", "willing", "wish", "with", "within", "without", "won't", "wonder", "would", "would", "wouldn't", "x", "y", "yes", "yet", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself", "yourselves", "z", "zero",
 }
 
-type ZScore []byte
-type Extremum []byte
+// TODO: Fix error, "Hash tables typically grow automatically when the number of elements increases above a certain threshold. When it does, it reallocates a new underlying array and copies all of the old elements into the new one." - dsnet, https://github.com/golang/go/issues/11865, 4/18-18 (original answer to issue from 25/7-15).
+type Links []*string
+func (links Links) appendLinkIfNotExists(link *string) (bool, uint) { for num, _ := links { if strings.EqualFold(*links[num], &link) { return true, uint(num) } } links = append(links, link); return false, uint(0) }
+type Articles []string
+func (articles Articles) appendArticleIfNotExists(article string) (bool, uint) { for num, _ := range articles { if strings.EqualFold(articles[num], article) { return true, uint(num) } } articles = append(articles, article); return false, uint(0) }
+type Words []string
+func (words Words) appendWordIfNotExists(word string) (bool, uint) { for num, _ := range words { if strings.EqualFold(words[num], word) { return true, uint(num) } } words = append(words, word); return false, uint(0) }
+// This is just a search which starts 4 goroutines each searching it's quarter of the Words list (I have no idea whether or not if a golang compiler optimizes such).
+func (words Words) search(word string) (bool, uint) {
+	length := len(words)
+	// Possible read/write queue here for each goroutine.
+	go func() {
+		for i := 0; i < length / 4; length++ {
+			if strings.EqualFold(words[i], word) { return false, uint(i) }
+		}
+	}()
+	go func() {
+		for i := length / 4; i < length / 2; length++ {
+			if strings.EqualFold(words[i], word) { return false, uint(i) }
+		}
+	}()
+	go func() {
+		for i := length / 2; i < length / 2 + length / 4; length++ {
+			if strings.EqualFold(words[i], word) { return false, uint(i) }
+		}
+	}()
+	go func() {
+		for i := length / 2 + length / 4; i < length / 4 * 3; length++ {
+			if strings.EqualFold(words[i], word) { return false, uint(i) }
+		}
+	}()
+	return true, uint(0)
+}
+
+type HashTable struct { Words Words; Links Links; Articles Articles }
+
+type Amount []byte
+func (amount Amount) increment() { amount = []byte(strconv.Itoa(strconv.ParseInt(string(amount), 10, 0)+1)) }
+
 type WordMetaData struct { ZScore ZScore; Extremum Extremum }
 type Sentence struct { Start, End []byte }
 type Sentences []Sentence
 type WordData struct { Sentences Sentences; MetaData WordMetaData }
-type PointerToParentArticles []*string
-type Article struct { Sections map[string]string; References []string; Links *Articles; Nouns map[string]WordData; IndexOffset int64; ZScore []byte; ParentVertice PointerToParentArticles }
-type Articles []Article
-type Graph struct { Articles map[string]Article; Words map[string]*Articles; AlphabeticIndex [26]int64 }
+
+type Article struct { Sections map[string]string; References []string; Links map[*string]bool; Nouns map[*string]WordData; WordMaxOccurence map[*string]Amount; WordMinOccurence map[*string]Amount; IndexOffset int64; ZScore ZScore; MinLinkedOccurence, MaxLinkedOccurence Amount }
+
+// ****, I just realized int's are optimal for binary methods in a large system (for returning a left or right bit shift in a super object/struct/hashtable). - 4/19/2018 - nevertheless, uints can hold larger numeric values, and given hardware of optimized quality multiple memory retrievals can be easy, although that is for large motherboard systems with many n amount of transistors.
+type ZScore []byte
+func (lrValue ZScore) declare(StdDev float64, Max, Min uint) { lrValue = ZScore(strconv.FormatFloat(StdDev / float64(Max - Min), 'f', -1, 64)) }
+type Extremum []byte
+func (lrValue Extremum) declare(Num uint, StdDev float64, Max, Min uint) { lrValue = Extremum(strconv.FormatFloat(float64(Num) * StdDev / float64(Max - Min), 'f', -1, 64)) }
+
+type DataGraphArticles map[*string]Article
+func (dataGraphArticles DataGraphArticles) New(article *string) { dataGraphArticles[article] = make(Article) }
+type DataGraphWords map[*string][]*string
+func (words DataGraphWords) appendIfNotExists(article, word *string) (bool, uint) {
+	for num, _ := range words[article] {
+		if strings.EqualFolds(*words[article][num], *word) { return true, uint(num) }
+	}
+	return false, uint(0)
+}
+type DataGraph struct { Articles DataGraphArticles; Words DataGraphWords /* map key is an article, items from the slices are pointers to words in the HashTable */; AlphabeticIndex [26]uint; SumLinks uint; HashTable HashTable; Final Final }
+
+type Final struct { Articles []Articles; Words []Words }
+
+// The amount of articles and words sorted will be determined by the amount of memory available. As of now an estimation of amount is articles with a depth of 3 link-levels from root-/base-article. (~5GB RAM depending on the amount of links and reoccuring links/words - calculated with a chosen median of 100 links per article)
+
+// TODO: Add keywords  for Bloom's taxonomy
+/* type BloomsTaxonomy struct {
+	L1 []string{}
+	L2 []string{}
+	L3 []string{}
+	L4 []string{}
+	L5 []string{}
+	L6 []string{}
+	L7 []string{}
+} */
+const Levels [5]string = [5]string{"remember", "understand", "apply", "analyze", "evaluate", "create"}
 
 func GetFilesFromArticlesDir(directory *string) (files []string, err error) {
 	osFileInfo, err := ioutil.ReadDir(*directory); if err != nil { return nil, err }; for _, fileInfo := range osFileInfo { if !fileInfo.IsDir() { files = append(files, fileInfo.Name()) } }; return
@@ -249,6 +305,9 @@ func DecompressBZip(directory, file *string) (ioReader io.Reader, err error) {
 	osFile, err := os.Open(*directory + "/" + *file); if err != nil { return nil, err }; if err != nil { return nil, err }; ioReader = bzip2.NewReader(osFile); return ioReader, nil
 }
 
+// TODO (4/19-15): Update to the new data structure. - Edit (4/19/2018): and add the added methods for each struct into the below methods' loops.
+
+// TODO: To ease on memory consumption do the WriteIndexAnContentData method after a certain amount of memory. - The size of the file can be retrieved within the WriteIndexAnContentData method.
 func (graph Graph) ReadWikiXML(directory *string) (err error) {
 	files, err := GetFilesFromArticlesDir(directory); if err != nil { return err }; referenceRE := regexp.MustCompile("<ref>(.+)</ref>"); linkRE := regexp.MustCompile("[[(.+)]]"); sectionRE := regexp.MustCompile("[=]{2,5}(.+)[=]{2,5}"); var sentenceIndex, previousSentenceIndex, curNounIndex int = -1, -1, -1; var mwPage MWPage; var sections  map[string]string; var sectionTitle string; var references []string; sentenceStop := ";:,.!?";
 	for _, file := range files {
@@ -256,12 +315,11 @@ func (graph Graph) ReadWikiXML(directory *string) (err error) {
 		if mwPage.Revisions[0].Text != "" {
 			var article Article
 			graph.Articles[mwPage.Title] = Article{}
-			// article.Nouns = make(map[string]WordData)
+			graph.HashTable.Articles = make(Articles, 0)
 			mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, "&lt;", "<", -1); mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, "&gt;", ">", -1); mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, "&quot;", "\"", -1); mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, "&amp;", "&", -1);
 			sectionIndex := sectionRE.FindAllStringIndex(mwPage.Revisions[0].Text, -1); for sectionNum, _ := range sectionIndex { sectionTitle = strings.Trim(mwPage.Revisions[0].Text[sectionIndex[sectionNum][0]:sectionIndex[sectionNum][1]], "="); if sectionNum == 0 { sections["Abstract"] = mwPage.Revisions[0].Text[:sectionIndex[sectionNum][1]-1] } else if sectionNum < len(sectionIndex) - 1 { sections[sectionTitle] = mwPage.Revisions[0].Text[sectionIndex[sectionNum][1]:sectionIndex[sectionNum+1][0]] } else { sections[sectionTitle] = mwPage.Revisions[0].Text[sectionIndex[sectionNum][1]:len(mwPage.Revisions[0].Text)] }
 				refIndex := referenceRE.FindAllStringIndex(mwPage.Revisions[0].Text, -1); for refNum, _ := range refIndex { references = append(references, mwPage.Revisions[0].Text[refIndex[refNum][0]:refIndex[refNum][1]]); mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, mwPage.Revisions[0].Text[refIndex[refNum][0]:refIndex[refNum][1]], "[r:" + strconv.Itoa(refNum) + "]", -1) }
-				linkIndex := linkRE.FindAllStringIndex(mwPage.Revisions[0].Text, -1); for linkNum, _ := range linkIndex { link := strings.Split(mwPage.Revisions[0].Text[linkIndex[linkNum][0]:linkIndex[linkNum][1]], "|")[2:][0]; if len(graph.Articles[link].ParentVertice) == 0 { parentVertex := make([]*string, 0); parentVertex = append(parentVertex, &mwPage.Title); graph.Articles[link] = Article{ParentVertice: parentVertex} } else { /* graph.Articles[link].ParentVertice.appendChildParentPointer(graph, mwPage.Title, link); */ ; article.Links.appendChild(graph.Articles[link], mwPage.Title) }; mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, mwPage.Revisions[0].Text[linkIndex[linkNum][0]:linkIndex[linkNum][1]], "[l:" + strconv.Itoa(linkNum) + "]", -1) }
-				
+				linkIndex := linkRE.FindAllStringIndex(mwPage.Revisions[0].Text, -1); for linkNum, _ := range linkIndex { link := strings.Split(mwPage.Revisions[0].Text[linkIndex[linkNum][0]:linkIndex[linkNum][1]], "|")[2:][0]; /* TODO */ graph.HashTable.Articles = append(graph.HashTable.Articles, link); if graph.Articles[mwPage.Title].Links[*] == false { graph.Articles[link] = Article{}; parentVertex := make([]*string, 0); parentVertex = append(parentVertex, &mwPage.Title) } else { /* graph.Articles[link].ParentVertice.appendChildParentPointer(graph, mwPage.Title, link); */ ; article.Links.appendChild(graph.Articles[link], mwPage.Title) }; mwPage.Revisions[0].Text = strings.Replace(mwPage.Revisions[0].Text, mwPage.Revisions[0].Text[linkIndex[linkNum][0]:linkIndex[linkNum][1]], "[l:" + strconv.Itoa(linkNum) + "]", -1) }
 				article.Sections = sections
 			};
 			words := fasttag.WordsToSlice(mwPage.Revisions[0].Text); posTags := fasttag.BrillTagger(words); for posNum, _ := range posTags { if string(posTags[posNum]) != "N" { continue }; for curNounIndex = strings.Index(mwPage.Revisions[0].Text[curNounIndex:], words[posNum]); curNounIndex != -1; {
@@ -278,14 +336,10 @@ func (articles *Articles) appendChild(childArticle Article, parentArticleTitle s
 	childArticle.ParentVertice = append(childArticle.ParentVertice, &parentArticleTitle)
 	*articles = append(*articles, childArticle)
 }
-/* func (pointerToParentArticles PointerToParentArticles) appendChildParentPointer(graph *Graph, parentTitle *string, childTitle string) {
-} */
-
 func (sentences Sentences) appendSentence(sentence Sentence) {
 	sentences = append(sentences, sentence)
 }
 
-// TODO: Update to the new struct organization.
 func (graph Graph) WriteIndexAndContentData(directory *string) (err error) {
 	indexFile, err := os.OpenFile(*directory+"/"+"index.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0770); if err != nil { return err }; defer indexFile.Close(); contentFile, err := os.OpenFile(*directory+"/"+"content.dat", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0770); if err != nil { return err }; defer contentFile.Close()
 	var gzipBuffer bytes.Buffer; compressor := gzip.NewWriter(&gzipBuffer); var sectionNum int = -1; var cFSize int
@@ -295,7 +349,6 @@ func (graph Graph) WriteIndexAndContentData(directory *string) (err error) {
 			gzipBuffer.WriteString(sectionTitle + "{");
 			compressor.Write([]byte(graph.Articles[articleTitle].Sections[sectionTitle]))
 			for refNum, _ := range graph.Articles[articleTitle].References { compressor.Write([]byte(graph.Articles[articleTitle].References[refNum])); if refNum < len(graph.Articles[articleTitle].References) { gzipBuffer.WriteString("|") } }; gzipBuffer.WriteString("&")
-			// for linkNum, childArticle := range graph.Articles[articleTitle].Links { compressor.Write([]byte(*graph.Articles[articleTitle].Links[linkNum].Title)); if linkNum < len(graph.Articles[articleTitle].Links) { gzipBuffer.WriteString("|") }; linkNum++ }
 			sectionNum++; if sectionNum < len(graph.Articles[articleTitle].Sections) { gzipBuffer.WriteString("/") }
 		}
 		fmt.Fprintln(contentFile, gzipBuffer); cFSize = cFSize + len(gzipBuffer.Bytes()) + 1; fmt.Fprintln(indexFile, articleTitle + ":" + string(strconv.Itoa(cFSize))); gzipBuffer.Reset(); compressor.Reset(&gzipBuffer) }; return
@@ -311,125 +364,32 @@ func (graph Graph) ReadIndex_StageOne(directory *string) (err error) {
 }
 
 func (graph Graph) TfIdf() (err error) {
-	var uint_wordOccurenceSum, uint_minOccurence, uint_maxOccurence, uint_wordSum uint = 0, 0, 0, 0
-	// var f64_mean, f64_stdDev, f64_zScore float64 = 0.0, 0.0, 0.0
-	var f64_mean, f64_stdDev float64 = 0.0, 0.0
+	var uint_wordOccurenceSum, uint_minOccurence, uint_maxOccurence, uint_wordSum uint = 0, 0, 0, 0; var f64_mean, f64_stdDev float64 = 0.0, 0.0
 
-	// get sum of word occurences and sum of words and then derive mean word occurence.
+	// MeanLinks has nothing to do with TF-IDF, but with weighing articles based on links, so instead of looping again in the WeighArticles method the counting is done here.
+	graph.SumLinks = 0
 	for articleTitle, _ := range graph.Articles {
-		for wordTitle, _ := range graph.Articles[articleTitle].Nouns {
-			uint_wordOccurenceSum += uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences))
-			switch {
-			case uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences)) > uint_maxOccurence:
-				uint_maxOccurence = uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences))
-				case uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences)) < uint_minOccurence:
-					uint_minOccurence = uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences))
-			}
-				uint_wordSum += uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences))
+		min, err := strconv.ParseUint(string(graph.MinLinksOccurence[&Article]), 10, 0); if err != nil { return err }
+		max, err := strconv.ParseUint(string(graph.MinLinksOccurence[&Article]), 10, 0); if err != nil { return err }
+		switch {
+		case max < uint(len(graph.Articles[articleTitle].Links)):
+			graph.MinLinksOccurence[&] = []byte(strconv.FormatUint(uint(len(graph.Articles[articleTitle].Links)), 10));
+		case min > uint(len(graph.Articles[articleTitle].Links)):
+			graph.MaxLinksOccurence[*articleTitle] = []byte(strconv.FormatUint(uint(len(graph.Articles[articleTitle].Links)), 10));
 		}
-	}
+		graph.SumLinks += uint(len(graph.Articles[articleTitle].Links)); for wordTitle, _ := range graph.Articles[articleTitle].Nouns { graph.Articles[articleTitle] += uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences)) switch { case uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences)) > uint_maxOccurence: uint_maxOccurence = uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences)); case uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences)) < uint_minOccurence: uint_minOccurence = uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences)) } uint_wordSum += uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences)) } }
 	f64_mean = float64(uint_wordOccurenceSum) / float64(uint_wordSum)
 
-	// Calculate standard deviation by LMS, linear regression. (Normalize the f64mean value)
-	for articleTitle, _ := range graph.Articles {
-		for wordTitle, _ := range graph.Articles[articleTitle].Nouns {
-			f64_stdDev += math.Pow(float64(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences))-f64_mean, float64(2))
-			if err != nil { return err }
-		}
-	}
-	f64_stdDev = math.Sqrt(float64(uint_wordSum)*f64_stdDev)
+	for articleTitle, _ := range graph.Articles { for wordTitle, _ := range graph.Articles[articleTitle].Nouns { f64_stdDev += math.Pow(float64(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences))-f64_mean, float64(2)) } }
+	// f64_stdDev = math.Sqrt(float64(uint_wordSum)*f64_stdDev)
+	f64_stdDev = math.Sqrt(float64(uint_wordSum)*f64_mean)
 
-	// Calculate z score and extremum values for each Noun.
-	for articleTitle, _ := range graph.Articles {
-		for wordTitle, _ := range graph.Articles[articleTitle].Nouns {
-			// graph.Articles[articleTitle].Nouns[wordTitle].MetaData.ZScore = strconv.FormatFloat(f64_mean / float64(uint_maxOccurence - uint_minOccurence), 'f', -1, 64)
-			graph.Articles[articleTitle].Nouns[wordTitle].MetaData.ZScore.declare(f64_stdDev, uint_maxOccurence, uint_minOccurence)
-			graph.Articles[articleTitle].Nouns[wordTitle].MetaData.Extremum.declare(uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences)), f64_stdDev, uint_maxOccurence, uint_minOccurence)
-		}
-	}
+	// TODO: "Bug", uint_maxOccurence and uint_minOccurence has to be for each and every word (fix ZScore.declare method)
+	for articleTitle, _ := range graph.Articles { for wordTitle, _ := range graph.Articles[articleTitle].Nouns { graph.Articles[articleTitle].Nouns[wordTitle].MetaData.ZScore.declare(f64_stdDev, uint_maxOccurence, uint_minOccurence); graph.Articles[articleTitle].Nouns[wordTitle].MetaData.Extremum.declare(uint(len(graph.Articles[articleTitle].Nouns[wordTitle].Sentences)), f64_stdDev, uint_maxOccurence, uint_minOccurence) } }
 	return err
 }
-func (lrValue ZScore) declare(wordStdDev float64, wordMax, wordMin uint) {
-	lrValue = ZScore(strconv.FormatFloat(wordStdDev / float64(wordMax - wordMin), 'f', -1, 64))
-}
-func (lrValue Extremum) declare(numSentences uint, wordStdDev float64, wordMax, wordMin uint) {
-	lrValue = Extremum(strconv.FormatFloat(float64(numSentences) * wordStdDev / float64(wordMax - wordMin), 'f', -1, 64))
-}
-
-// TODO: Change this to do a linear regression calculation on articles.
-func LRMean(values []float64) float64 {
-	sum := 0.0
-	for _, v := range values {
-		sum += v
-	}
-	return sum / float64(len(values))
-}
-
-// function to compute covariance of two arrays, inp: float64 array1 and array2, mean1 and mean2
-func LRCovariance(x []float64, mean_x float64, y []float64, mean_y float64) float64 {
-	covar := 0.0
-
-	i := 0
-	for _, x_val := range x {
-		covar_prod := (x_val - mean_x) * (y[i] - mean_y)
-		covar += covar_prod
-		i += 1
-	}
-	return covar
-}
-
-// function to compute variance of array, inp: float64 array1 mean1
-func LRVariance(values []float64, mean_value float64) float64 {
-	variance_sum := 0.0
-	for _, v := range values {
-		abs := v - mean_value
-		true_abs := abs*abs
-		variance_sum += true_abs
-	}
-	return variance_sum
-}
-
-// function to compute linar regression coefficients
-func LRCoefficients(pred_vars []float64, target []float64) []float64 {
-	x_mean := LRMean(pred_vars)
-	y_mean := LRMean(target)
-
-	b1 := LRCovariance(pred_vars, x_mean, target, y_mean) / LRVariance(pred_vars, x_mean)
-	b0 := y_mean - (b1 * x_mean)
-
-	coff := []float64{b0, b1}
-	return coff
-}
-
-// master function to perform linear regression
-func LinearRegression(pred_vars []float64, target []float64, test_vars [] float64) []float64 {
-	var predictions []float64
-
-	coff := LRCoefficients(pred_vars, target)
-	for _, row := range test_vars {
-		y_pred := coff[0] + coff[1] * row
-		predictions = append(predictions, y_pred)
-	}
-	return predictions
-}
-
-// function to compute rmse of actual values vs predicted values
-func LRRMSE(actual []float64, predicted []float64) float64 {
-	sum_error := 0.0
-	i := 0
-	for _, value := range actual {
-		err := predicted[i] - value
-		sum_error += err*err
-		i += 1 
-	}
-	mean_error := sum_error / float64(len(actual))
-	return math.Sqrt(mean_error)
-}
-
-// TODO: When the other TODO's are done; make an index with the top pageranking article(s) per graph (depth of 2 vertices) as keys and a list of nouns sorted in an ascending order where the nouns have values derived from the NounLR method. If the top pageranking articles have a high enough diversity in list of nouns they should be in the index too. (the name of the file will be the users input, the user input will decide which article to be the root of the graph.) - EXPERIMENTAL: make an index of nouns with noun as key and pagerank/base article file as key sorted by the sum of nouns' linear regression value.
 
 func (graph Graph) WriteMetaData(directory, baseArticle string) (err error) {
-	// func (directory, baseArticle string) (err error) {
 	mdatFile, err := os.OpenFile(directory+"/"+baseArticle+".mdat", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0770);
 	if err != nil { return err };
 	defer mdatFile.Close();
@@ -460,11 +420,9 @@ func (graph Graph) ReadMetaData(directory, baseArticle string) (err error) {
 	file, err := os.OpenFile(directory+"/"+baseArticle+".mdat", os.O_RDONLY, 0700);
 	if err != nil { return err };
 	defer file.Close();
-	// var bufioReader bufio.Reader
 	bufioReader := bufio.NewReader(file);
 	var line []byte;
 	var buffer bytes.Buffer;
-	// var gobDecoder gob.Decoder;
 	gobDecoder := gob.NewDecoder(&buffer);
 	var table WordMetaData
 	for {
@@ -484,26 +442,68 @@ func (graph Graph) ReadMetaData(directory, baseArticle string) (err error) {
 		if err != nil {
 			return err
 		}
-		// graph.Articles[unformattedLine[0]] = append(graph.Articles[unformattedLine[0]], Article{MetaData: table})
-		// graph.Articles[unformattedLine[0]].Nouns[unformattedLine[1]].MetaData = table
 		graph.Articles[unformattedLine[0]].Nouns[unformattedLine[1]].MetaData.declare(table)
 	}
-	// for i := -1; i < len(articleMetaData); i++ {
-	// err = gobDecoder.Decode(&table);
-	// if err != nil {
-	// return err
-	// };
-	// graph.Articles = append(graph.Articles, Article{MetaData: table})
-	// };
 	return
 }
 func (wordMetaData WordMetaData) declare(metadata WordMetaData) {
 	wordMetaData = metadata
 }
 
+func (graph Graph) WeighArticles() {
+	for articleTitle, _ := range graph.Articles {
+		for _, linkArticle1 := graph.Articles[articleTitle1].Links {
+			if graph.Articles[articleTitle] == *linkArticle1 { linkArticle1.ParentVertice.appendLink(&linkArticle1); graph.Articles[articleTitle].LinkedAmount.increment() }
+			for _, linkArticle2 := range *linkArticle1 {
+				if graph.Articles[articleTitle] == *linkArticle2 { linkArticle2.ParentVertice.appendLink(&linkArticle2); graph.Articles[articleTitle].LinkedAmount.increment() }
+			}
+		}
+	}
+	stdDev := math.Sqrt(float64(graph.SumLinks)*(uint(len(graph.Articles)) / graph.SumLinks))
+	for articleTitle, _ := range graph.Articles {
+		// TODO: "Bug", graph.MaxLinksOccurence and graph.MinLinksOccurence has to be for each and every article, and grapgh.*LinksOccurence has to be variables inside graph.Articles[<article title>]. - also fix TfIdf method's uint_maxOccurence and uint_minOccurence counter, they have to be variables declared by an assignment from graph.Articles[<article title>].Sentences.
+		graph.Articles[articleTitle].ZScore.declare(stdDev, graph.MaxLinksOccurence, Min uint)
+	}
+}
+
+// TODO: This is a method which will produce a final product from the wikipedia articles, e.g this will take up extra space (duplicate text from content.dat and <article>.mdat) so it should preferrably be used on a disk drive with enough space or on a USB.
+func (graph Graph) WriteTxt() (err error) {
+	var depthCounter uint8 = 0
+	// fWriter := bufio.NewWriter(ioWriter)
+	indexFile, err := os.Create("index-" + articleName + ".org"); if err != nil { return err }; defer indexFile.Close()
+	for articleDepth, _ := range graph.Final.Articles {
+		for articleRankAndTitle, _ := range graph.Final.Articles[articleDepth] {
+			file, err := os.Create(*graph.Final.Articles[articleDepth] + ".org"); if err != nil { return err }; defer file.Close()
+			file.WriteString("* " + *graph.Final.Articles[articleDepth]); file.WriteString("** Sections"); for sectionName, sectionText := range graph.Articles[articleRankAndTitle].Sections { file.WriteString("*** " + sectionName); file.WriteString("    " + sectionText) } }
+		/* TODO: Update the articles.Pageranks to fit with Graph.Final.Articles */
+		for num, item := range graph.Articles[articleRankAndTitle] {
+			depthCounter++
+			indexFile.WriteString("* " + strconv.Itoa(int(depth)), "-", articleRankAndTitle)
+			if depthCounter == 7 { depthCounter = 0; break }
+			/* pagerankIndex := make(map[float64]string)
+			for article, pagerank := range articles[articleName].Pageranks[depth] {
+				float64Pr, err := strconv.ParseFloat(string(pagerank), 64)
+				if err != nil { return err }
+				pageranks[articleName] = append(pageranks[articleName], Pagerank(float64Pr))
+				pagerankIndex[float64Pr] = article
+			}
+			sort.Sort(sort.Reverse(SortedPageranks(pageranks[articleName])))
+			for pagerank, article := range pagerankIndex {
+				indexFile.WriteString("** " + article + " - " + strconv.FormatFloat(pagerank, 'f', 6, 64))
+			} */
+		}
+	}
+	return nil
+}
+
 func main() {
+	readDir := flag.String("readDir", "", "The directory contatining the bzipped wikipedia files (full articles, preferrably the ones separated into several files depending on your available RAM).")
+	writeDir := flag.String("writeDir", "", "The directory the chosen graph of the chosen base article will be written to. If no value is given a directory with the name of the base article is made.")
+	flag.Parse()
+	
+
 	// TODO (latest update as of 4/15-18): 1) decide ReadIndexStageTwo for disk read performance optimization, 2) calculate ZScore for Article with the LR functions, 3) implement a dijkstra function for Articles (see legacy/dijkstra in GOPATH/src/legacy), 4) A SortBy method for graph.Articles[...].Nouns[...].MetaData.* and graph.Articles[...].ZScore (the structs require pointers and these will have the actual SortBy methods and Sort requirements (len, less, swap(...))).
 	//    TODO: add the WriteTxt method from the sample-mysql/boltdb.go file - in GOPATH/src/legacy/pressure679/WikiPagerankDB.
 	//       TODO: Actually utilize the existing code to the endpoint (WriteTxt method).
-	//    TODO: Add a chatbot (markov/viterbi chain generator with a keyword adder from Bloom's taxonomical model) functionality which reads existing user content for active learning. - this will include the dijkstra method/package.
+	//    TODO: Add a chatbot (markov/viterbi chain generator with a keyword adder from Bloom's taxonomical model) functionality which reads existing user content for active learning. - this will include the dijkstra method/package. - Edit (4/17-18): make a BST/decision tree (actually a C4.5 decision tree by nature) which depends it's decision by parsing which child node to choose from a matrix set (Final struct) which parses amount of occurences of keywords from the Final struct in an input text (text given from user).
 }
