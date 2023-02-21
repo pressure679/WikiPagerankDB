@@ -29,6 +29,6 @@ func (graph *Graph) LinearRegression() {
 		graph.TriGramSumOccurence += uint(len(graph.qaTriGramToSentences[trigramPtr]))
 	}
 	graph.TriGramMeanOccurence = float64(float64(graph.TriGramSumOccurence) / float64(len(graph.qaTriGramToSentences)))
-		graph.TriGramStdDev = math.Sqrt(float64(graph.TriGramSumOccurence) / graph.TriGramMeanOccurence)
+	graph.TriGramStdDev = math.Sqrt(float64(graph.TriGramSumOccurence) / graph.TriGramMeanOccurence)
 	graph.TriGramZScore = graph.TriGramStdDev / float64(graph.TriGramMaxOccurence-graph.TriGramMinOccurence)
 }
