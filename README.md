@@ -1,4 +1,5 @@
 # Note
+# Go get is deprecated from version 1.17, so to use github packages 1.16.n is recommended (otherwise see god mod tidy go mod init)
 
 As of now I have:
 - Swapped between keeping an index in RAM, or writing it to a more persistent storage
